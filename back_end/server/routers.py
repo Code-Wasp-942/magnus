@@ -1,4 +1,7 @@
 # back_end/server/routers.py
+import jwt
+from fastapi import status
+from fastapi.security import OAuth2PasswordBearer
 from library import *
 from . import database
 from . import models
@@ -7,6 +10,7 @@ from .schemas import *
 from .database import *
 from ._jwt_signer import *
 from ._feishu_client import *
+from ._magnus_config import *
 
 
 __all__ = [
@@ -15,6 +19,40 @@ __all__ = [
 
 
 router = APIRouter()
+
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/feishu/login")
+
+
+async def get_current_user(
+    token: str = Depends(oauth2_scheme), 
+    db: Session = Depends(database.get_db)
+)-> models.User:
+    
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    
+    try:
+        
+        payload = jwt.decode(
+            token, 
+            magnus_config["server"]["jwt_signer"]["secret_key"], 
+            algorithms=[magnus_config["server"]["jwt_signer"]["algorithm"]]
+        )
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            raise credentials_exception
+    except jwt.PyJWTError:
+        raise credentials_exception
+        
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if user is None:
+        raise credentials_exception
+        
+    return user
 
 
 @router.get("/github/{ns}/{repo}/branches")
@@ -34,7 +72,6 @@ async def get_commits(
     repo: str, 
     branch: str,
 ):
-    
     return await github_client.fetch_commits(ns, repo, branch)
 
 
@@ -44,10 +81,13 @@ async def get_commits(
 )
 async def submit_job(
     job_data: JobSubmission, 
-    db: Session = Depends(database.get_db)
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
 ):
-
-    db_job = models.Job(**job_data.model_dump())
+    
+    job_dict = job_data.model_dump()
+    db_job = models.Job(**job_dict, user_id=current_user.id)
+    
     db_job.status = "Pending" 
     
     db.add(db_job)
@@ -66,6 +106,9 @@ async def get_jobs(
     limit: int = 100, 
     db: Session = Depends(database.get_db),
 ):
+    """
+    出于对课题组内成员的充分信任，任何成员均可查看所有任务，无需管理员权限
+    """
     jobs = db.query(models.Job).order_by(models.Job.created_at.desc())\
             .offset(skip).limit(limit).all()
     return jobs

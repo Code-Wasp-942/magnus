@@ -11,6 +11,16 @@ __all__ = [
 ]
 
 
+class UserInfo(BaseModel):
+    id: str
+    name: str
+    avatar_url: Optional[str] = None
+    email: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
 class JobSubmission(BaseModel):
     task_name: str
     description: Optional[str] = None
@@ -29,22 +39,16 @@ class JobResponse(JobSubmission):
     status: str
     created_at: datetime
 
+    # 2. ✅ 新增 user 字段，嵌套返回用户详细信息
+    # Pydantic 会自动从数据库模型的 relationship 中读取 user 对象
+    user: Optional[UserInfo] = None 
+
     class Config:
-        from_attributes = True # 兼容 ORM 对象读取
+        from_attributes = True
 
 
 class FeishuLoginRequest(BaseModel):
     code: str
-
-
-class UserInfo(BaseModel):
-    id: str
-    name: str
-    avatar_url: Optional[str] = None
-    email: Optional[str] = None
-
-    class Config:
-        from_attributes = True
 
 
 class LoginResponse(BaseModel):

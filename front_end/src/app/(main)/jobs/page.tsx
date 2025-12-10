@@ -1,16 +1,23 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, Search, RefreshCw, Box, Rocket, Copy, Check, Loader2 } from "lucide-react";
+import { Plus, Search, RefreshCw, Box, Rocket, Copy, Check, Loader2, User as UserIcon } from "lucide-react";
 import JobForm, { JobFormData } from "@/components/jobs/job-form";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { API_BASE } from "@/lib/config";
+import { client } from "@/lib/api"; // ✅ 使用统一的 client
+
+// --- 类型定义 ---
+interface User {
+  id: string;
+  name: string;
+  avatar_url?: string;
+}
 
 interface Job {
   id: string; 
   task_name: string;
   description?: string;
-  user_id: string;
+  user?: User; // ✅ 现在是完整的 User 对象
   status: string;
   namespace: string;
   repo_name: string;
@@ -22,6 +29,7 @@ interface Job {
   created_at: string;
 }
 
+// --- 子组件：可复制的 ID ---
 function CopyableId({ id }: { id: string }) {
   const [copied, setCopied] = useState(false);
 
@@ -38,13 +46,44 @@ function CopyableId({ id }: { id: string }) {
       className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-blue-400 transition-colors group/id"
       title="Click to copy full ID"
     >
-      <span className="font-mono">{id}</span>
+      <span className="font-mono text-[10px] uppercase tracking-wider">{id.substring(0, 8)}</span>
       {copied ? (
         <Check className="w-3 h-3 text-green-500" />
       ) : (
         <Copy className="w-3 h-3 opacity-0 group-hover/id:opacity-100 transition-opacity" />
       )}
     </button>
+  );
+}
+
+// --- 子组件：用户头像 ---
+function UserAvatar({ user }: { user?: User }) {
+  if (!user) {
+    return (
+      <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
+         <UserIcon className="w-4 h-4 text-zinc-500" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2.5">
+      {user.avatar_url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img 
+          src={user.avatar_url} 
+          alt={user.name} 
+          className="w-8 h-8 rounded-full border border-zinc-700/50 object-cover shadow-sm"
+        />
+      ) : (
+        <div className="w-8 h-8 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-xs font-bold border border-indigo-500/30">
+          {user.name.substring(0, 2).toUpperCase()}
+        </div>
+      )}
+      <div className="flex flex-col">
+        <span className="text-sm font-medium text-zinc-200 leading-tight">{user.name}</span>
+      </div>
+    </div>
   );
 }
 
@@ -64,16 +103,13 @@ export default function JobsPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // --- API Fetch ---
   const fetchJobs = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/jobs`);
-      if (res.ok) {
-        const data = await res.json();
-        setJobs(data);
-      } else {
-        console.error("Failed to fetch jobs");
-      }
+      // ✅ 使用 client 统一调用，自动处理 Base URL 和错误
+      const data = await client("/api/jobs");
+      setJobs(data);
     } catch (e) {
       console.error("Backend offline?", e);
     } finally {
@@ -112,132 +148,160 @@ export default function JobsPage() {
   };
 
   // --- Date Formatter ---
-  const formatBeijingTime = (isoString: string) => {
+  const formatTimeAgo = (isoString: string) => {
     if (!isoString) return "--";
     const date = new Date(isoString.endsWith("Z") ? isoString : `${isoString}Z`);
-    return date.toLocaleString('zh-CN', {
-      timeZone: 'Asia/Shanghai',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false
-    }).replace(/\//g, '-'); 
+    const now = new Date();
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+    
+    if (diffInSeconds < 60) return "Just now";
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+    return date.toLocaleDateString();
   };
 
   return (
     <div className="relative min-h-[calc(100vh-8rem)]">
       
-      <div className="flex items-center justify-between mb-6">
+      {/* --- Header --- */}
+      <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">Job Management</h1>
-          <p className="text-zinc-500 text-sm mt-1">Manage and monitor training tasks.</p>
+          <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
+            Job Management
+          </h1>
+          <p className="text-zinc-500 text-sm mt-1">Monitor and schedule your training workloads.</p>
         </div>
         <button 
           onClick={handleNewJob} 
-          className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors shadow-lg shadow-blue-900/20 active:scale-95"
+          className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors shadow-lg shadow-blue-900/20 active:scale-95 border border-blue-500/50"
         >
           <Plus className="w-4 h-4" /> New Job
         </button>
       </div>
 
-      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4 mb-6 flex items-end gap-4">
-        <div className="relative flex-1 max-w-md"> 
-          <label className="text-xs uppercase tracking-wider mb-1.5 block font-medium text-zinc-500">
-            Search Jobs
-          </label>
-          <div className="relative group">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 group-focus-within:text-blue-500 transition-colors" />
-            <input 
-              type="text" 
-              placeholder="Search by ID or Task Name..." 
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg pl-10 pr-4 py-2.5 text-sm text-zinc-200 focus:outline-none focus:border-blue-500 transition-all placeholder-zinc-700 hover:border-zinc-700"
-            />
-          </div>
+      {/* --- Filters --- */}
+      <div className="bg-zinc-900/40 border border-zinc-800 rounded-xl p-1.5 mb-6 flex items-center gap-2 backdrop-blur-sm">
+        <div className="relative flex-1 group">
+           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 group-focus-within:text-blue-500 transition-colors" />
+           <input 
+             type="text" 
+             placeholder="Search tasks..." 
+             className="w-full bg-transparent border-none py-2.5 pl-9 pr-4 text-sm text-zinc-200 focus:outline-none focus:ring-0 placeholder-zinc-600"
+           />
         </div>
-
-        <div className="w-64"> 
+        <div className="h-6 w-px bg-zinc-800"></div>
+        <div className="w-48"> 
           <SearchableSelect
-             label="Filter by User" 
              value={userFilter}
              onChange={setUserFilter}
              options={USER_FILTER_OPTIONS}
-             placeholder="Select user..."
-             className="mb-0" 
+             placeholder="All Users"
+             className="mb-0 border-none bg-transparent" 
           />
         </div>
       </div>
 
-      <div className="border border-zinc-800 rounded-lg overflow-hidden bg-zinc-900/30 min-h-[300px]">
+      {/* --- Table --- */}
+      <div className="border border-zinc-800 rounded-xl overflow-hidden bg-zinc-900/30 min-h-[400px] shadow-sm">
         {loading ? (
-           <div className="flex flex-col items-center justify-center h-64 text-zinc-500 gap-3">
+           <div className="flex flex-col items-center justify-center h-80 text-zinc-500 gap-3">
              <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-             <p className="text-sm">Fetching jobs from backend...</p>
+             <p className="text-sm font-medium">Loading jobs...</p>
            </div>
         ) : jobs.length === 0 ? (
-           <div className="flex flex-col items-center justify-center h-64 text-zinc-500">
-             <Box className="w-10 h-10 mb-2 opacity-20" />
-             <p>No jobs found.</p>
+           <div className="flex flex-col items-center justify-center h-80 text-zinc-500">
+             <div className="w-16 h-16 bg-zinc-800/50 rounded-full flex items-center justify-center mb-4">
+                <Box className="w-8 h-8 opacity-40" />
+             </div>
+             <p className="text-lg font-medium text-zinc-400">No jobs found</p>
+             <p className="text-sm mt-1">Get started by creating a new training task.</p>
            </div>
         ) : (
           <table className="w-full text-left text-sm">
-            <thead className="bg-zinc-900/80 text-zinc-400 border-b border-zinc-800">
+            <thead className="bg-zinc-900/90 text-zinc-500 border-b border-zinc-800 backdrop-blur-md">
               <tr>
-                <th className="px-6 py-4 font-medium w-1/4">Task / Task ID</th>
-                <th className="px-6 py-4 font-medium">Status</th>
-                <th className="px-6 py-4 font-medium">Repo / Branch · Commit</th>
-                <th className="px-6 py-4 font-medium">Resources</th>
-                <th className="px-6 py-4 font-medium">Created at / Creator</th>
-                <th className="px-6 py-4 font-medium text-right">Actions</th>
+                <th className="px-6 py-4 font-medium w-[28%]">Task Details</th>
+                <th className="px-6 py-4 font-medium w-[12%]">Status</th>
+                <th className="px-6 py-4 font-medium w-[25%]">Code Source</th>
+                <th className="px-6 py-4 font-medium w-[15%]">Resources</th>
+                <th className="px-6 py-4 font-medium w-[20%]">Creator</th>
+                <th className="px-6 py-4 font-medium text-right"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800/50">
               {jobs.map((job) => (
-                <tr key={job.id} className="hover:bg-zinc-800/30 transition-colors group">
-                  <td className="px-6 py-4">
-                    <div className="flex flex-col gap-1">
-                      <span className="font-medium text-zinc-200">{job.task_name}</span>
-                      <CopyableId id={job.id} />
+                <tr key={job.id} className="hover:bg-zinc-800/40 transition-colors group">
+                  
+                  {/* Column 1: Task Details */}
+                  <td className="px-6 py-4 align-top">
+                    <div className="flex flex-col gap-1.5">
+                      <span className="font-semibold text-zinc-200 text-base">{job.task_name}</span>
+                      <div className="flex items-center gap-2">
+                        <CopyableId id={job.id} />
+                      </div>
+                      {job.description && (
+                        <p className="text-zinc-500 text-xs line-clamp-1 mt-0.5">{job.description}</p>
+                      )}
                     </div>
                   </td>
-                  <td className="px-6 py-4">
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border 
+
+                  {/* Column 2: Status */}
+                  <td className="px-6 py-4 align-top">
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold border shadow-sm
                       ${job.status === 'Running' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 
                         job.status === 'Failed' ? 'bg-red-500/10 text-red-400 border-red-500/20' : 
                         job.status === 'Pending' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' :
                         'bg-green-500/10 text-green-400 border-green-500/20'}`}>
+                      {job.status === 'Running' && <span className="relative flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-blue-500"></span></span>}
                       {job.status}
                     </span>
                   </td>
-                  <td className="px-6 py-4">
-                      <div className="flex flex-col">
-                          <span className="text-zinc-300 flex items-center gap-1.5">
-                            <Box className="w-3.5 h-3.5 text-zinc-500"/> {job.repo_name}
+
+                  {/* Column 3: Code Source */}
+                  <td className="px-6 py-4 align-top">
+                      <div className="flex flex-col gap-1.5">
+                          <span className="text-zinc-300 flex items-center gap-2 text-xs font-medium bg-zinc-900/50 w-fit px-2 py-1 rounded border border-zinc-800">
+                            <Box className="w-3.5 h-3.5 text-zinc-500"/> 
+                            {job.namespace} / {job.repo_name}
                           </span>
-                          <span className="text-zinc-500 text-xs font-mono mt-0.5 ml-5">
-                            {job.branch} • {job.commit_sha.substring(0, 7)}
-                          </span>
+                          <div className="flex items-center gap-2 text-xs text-zinc-500 font-mono ml-1">
+                             <div className="w-1.5 h-1.5 rounded-full bg-zinc-600"></div>
+                             {job.branch}
+                             <span className="text-zinc-700">|</span>
+                             <span className="bg-zinc-800 px-1.5 rounded text-zinc-400">{job.commit_sha.substring(0, 7)}</span>
+                          </div>
                       </div>
                   </td>
-                  <td className="px-6 py-4 text-zinc-400">
-                    {job.gpu_type === 'CPU' 
-                        ? <span className="text-zinc-500">CPU Only</span>
-                        : <span>{job.gpu_type.replace(/_/g, ' ')} × {job.gpu_count}</span>
-                    }
-                  </td>
-                  <td className="px-6 py-4 text-zinc-500 whitespace-nowrap">
-                    <div className="flex flex-col">
-                        <span className="text-zinc-300">{formatBeijingTime(job.created_at)}</span>
-                        <span className="text-xs text-zinc-600">{job.user_id}</span>
+
+                  {/* Column 4: Resources */}
+                  <td className="px-6 py-4 align-top">
+                    <div className="flex flex-col gap-1">
+                        <span className="text-zinc-300 text-sm font-medium">
+                            {job.gpu_type === 'CPU' ? 'CPU Only' : job.gpu_type.replace(/_/g, ' ')}
+                        </span>
+                        {job.gpu_type !== 'CPU' && (
+                             <span className="text-xs text-zinc-500">{job.gpu_count} unit(s)</span>
+                        )}
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex justify-end gap-2 opacity-60 group-hover:opacity-100 transition-opacity">
+
+                  {/* Column 5: Creator (Updated) */}
+                  <td className="px-6 py-4 align-top">
+                    <div className="flex flex-col gap-2">
+                        {/* Avatar Component */}
+                        <UserAvatar user={job.user} />
+                        <span className="text-xs text-zinc-500 pl-11">
+                           Created {formatTimeAgo(job.created_at)}
+                        </span>
+                    </div>
+                  </td>
+
+                  {/* Column 6: Actions */}
+                  <td className="px-6 py-4 align-middle text-right">
+                    <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
                       <button 
                           onClick={() => handleCloneJob(job)} 
-                          className="p-1.5 hover:bg-zinc-700 rounded text-zinc-400 hover:text-white transition-colors" 
+                          className="p-2 bg-zinc-800 hover:bg-zinc-700 hover:text-white rounded-lg text-zinc-400 transition-colors border border-zinc-700/50 shadow-sm" 
                           title="Clone & Rerun"
                       >
                         <RefreshCw className="w-4 h-4" />
@@ -251,6 +315,7 @@ export default function JobsPage() {
         )}
       </div>
 
+      {/* --- Drawer --- */}
       {isDrawerOpen && (
         <div 
           onClick={() => setIsDrawerOpen(false)} 
@@ -258,18 +323,18 @@ export default function JobsPage() {
         />
       )}
 
-      <div className={`fixed top-0 right-0 h-full w-[600px] bg-[#0A0A0C] border-l border-zinc-800 shadow-2xl z-[100] transform transition-transform duration-300 ease-in-out ${isDrawerOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+      <div className={`fixed top-0 right-0 h-full w-[600px] bg-[#09090b] border-l border-zinc-800 shadow-2xl z-[100] transform transition-transform duration-300 ease-in-out ${isDrawerOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         <div className="h-full flex flex-col relative">
           
-          <div className="px-6 py-5 border-b border-zinc-800 flex items-center justify-between bg-zinc-900/50">
+          <div className="px-6 py-5 border-b border-zinc-800 flex items-center justify-between bg-zinc-900/50 backdrop-blur-sm">
             <div>
                 <h2 className="text-lg font-bold text-white flex items-center gap-2">
                     {drawerMode === 'create' ? <Rocket className="w-5 h-5 text-blue-500"/> : <RefreshCw className="w-5 h-5 text-purple-500"/>}
                     {drawerMode === 'create' ? "Submit New Job" : `Clone Job`}
                 </h2>
-                {drawerMode === 'clone' && <p className="text-xs text-zinc-500 mt-1">Configurations pre-filled from task #{selectedJobId?.substring(0, 8)}</p>}
+                {drawerMode === 'clone' && <p className="text-xs text-zinc-500 mt-1">Configurations pre-filled from previous task</p>}
             </div>
-            <button onClick={() => setIsDrawerOpen(false)} className="text-zinc-500 hover:text-white transition-colors">✕</button>
+            <button onClick={() => setIsDrawerOpen(false)} className="text-zinc-500 hover:text-white transition-colors bg-zinc-800/50 hover:bg-zinc-700 p-1.5 rounded-md">✕</button>
           </div>
 
           <div className="flex-1 overflow-y-auto p-6 custom-scrollbar relative">
