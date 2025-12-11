@@ -1,12 +1,14 @@
+// front_end/src/app/(main)/jobs/page.tsx
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, Search, RefreshCw, Box, Rocket, Copy, Check, Loader2, User as UserIcon } from "lucide-react";
+import { Plus, Search, RefreshCw, Box, Rocket, Loader2, User as UserIcon } from "lucide-react";
 import JobForm, { JobFormData } from "@/components/jobs/job-form";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { client } from "@/lib/api"; // ✅ 使用统一的 client
+import { CopyableText } from "@/components/ui/copyable-text"; // ✅ 复用通用组件
+import { client } from "@/lib/api";
 
-// --- 类型定义 ---
+// --- Types ---
 interface User {
   id: string;
   name: string;
@@ -17,7 +19,7 @@ interface Job {
   id: string; 
   task_name: string;
   description?: string;
-  user?: User; // ✅ 现在是完整的 User 对象
+  user?: User;
   status: string;
   namespace: string;
   repo_name: string;
@@ -29,34 +31,7 @@ interface Job {
   created_at: string;
 }
 
-// --- 子组件：可复制的 ID ---
-function CopyableId({ id }: { id: string }) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    navigator.clipboard.writeText(id);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  return (
-    <button 
-      onClick={handleCopy} 
-      className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-blue-400 transition-colors group/id"
-      title="Click to copy full ID"
-    >
-      <span className="font-mono text-[10px] uppercase tracking-wider">{id.substring(0, 8)}</span>
-      {copied ? (
-        <Check className="w-3 h-3 text-green-500" />
-      ) : (
-        <Copy className="w-3 h-3 opacity-0 group-hover/id:opacity-100 transition-opacity" />
-      )}
-    </button>
-  );
-}
-
-// --- 子组件：用户头像 ---
+// --- Components ---
 function UserAvatar({ user }: { user?: User }) {
   if (!user) {
     return (
@@ -103,11 +78,9 @@ export default function JobsPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // --- API Fetch ---
   const fetchJobs = async () => {
     setLoading(true);
     try {
-      // ✅ 使用 client 统一调用，自动处理 Base URL 和错误
       const data = await client("/api/jobs");
       setJobs(data);
     } catch (e) {
@@ -131,7 +104,6 @@ export default function JobsPage() {
   const handleCloneJob = (job: Job) => {
     setDrawerMode("clone");
     setSelectedJobId(job.id);
-    
     setCloneData({
         taskName: `${job.task_name}-copy`,
         description: job.description || "",
@@ -143,27 +115,28 @@ export default function JobsPage() {
         gpu_count: job.gpu_count,
         gpu_type: job.gpu_type
     });
-    
     setIsDrawerOpen(true);
   };
 
-  // --- Date Formatter ---
-  const formatTimeAgo = (isoString: string) => {
+  // ! PROTECTED: Must use absolute Beijing Time. Do NOT change.
+  const formatBeijingTime = (isoString: string) => {
     if (!isoString) return "--";
     const date = new Date(isoString.endsWith("Z") ? isoString : `${isoString}Z`);
-    const now = new Date();
-    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-    
-    if (diffInSeconds < 60) return "Just now";
-    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
-    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
-    return date.toLocaleDateString();
+    return date.toLocaleString('zh-CN', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    }).replace(/\//g, '-'); 
   };
 
   return (
     <div className="relative min-h-[calc(100vh-8rem)]">
       
-      {/* --- Header --- */}
+      {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
@@ -179,7 +152,7 @@ export default function JobsPage() {
         </button>
       </div>
 
-      {/* --- Filters --- */}
+      {/* Filters */}
       <div className="bg-zinc-900/40 border border-zinc-800 rounded-xl p-1.5 mb-6 flex items-center gap-2 backdrop-blur-sm">
         <div className="relative flex-1 group">
            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 group-focus-within:text-blue-500 transition-colors" />
@@ -201,7 +174,7 @@ export default function JobsPage() {
         </div>
       </div>
 
-      {/* --- Table --- */}
+      {/* Table */}
       <div className="border border-zinc-800 rounded-xl overflow-hidden bg-zinc-900/30 min-h-[400px] shadow-sm">
         {loading ? (
            <div className="flex flex-col items-center justify-center h-80 text-zinc-500 gap-3">
@@ -232,12 +205,16 @@ export default function JobsPage() {
               {jobs.map((job) => (
                 <tr key={job.id} className="hover:bg-zinc-800/40 transition-colors group">
                   
-                  {/* Column 1: Task Details */}
+                  {/* Task Details */}
                   <td className="px-6 py-4 align-top">
                     <div className="flex flex-col gap-1.5">
                       <span className="font-semibold text-zinc-200 text-base">{job.task_name}</span>
                       <div className="flex items-center gap-2">
-                        <CopyableId id={job.id} />
+                        {/* ✅ 复用组件: Display full ID, customized with tailwind classes */}
+                        <CopyableText 
+                            text={job.id} 
+                            className="text-[10px] uppercase tracking-wider" 
+                        />
                       </div>
                       {job.description && (
                         <p className="text-zinc-500 text-xs line-clamp-1 mt-0.5">{job.description}</p>
@@ -245,7 +222,7 @@ export default function JobsPage() {
                     </div>
                   </td>
 
-                  {/* Column 2: Status */}
+                  {/* Status */}
                   <td className="px-6 py-4 align-top">
                     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold border shadow-sm
                       ${job.status === 'Running' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 
@@ -257,7 +234,7 @@ export default function JobsPage() {
                     </span>
                   </td>
 
-                  {/* Column 3: Code Source */}
+                  {/* Code Source */}
                   <td className="px-6 py-4 align-top">
                       <div className="flex flex-col gap-1.5">
                           <span className="text-zinc-300 flex items-center gap-2 text-xs font-medium bg-zinc-900/50 w-fit px-2 py-1 rounded border border-zinc-800">
@@ -273,30 +250,28 @@ export default function JobsPage() {
                       </div>
                   </td>
 
-                  {/* Column 4: Resources */}
+                  {/* Resources */}
+                  {/* ! PROTECTED: Single line format "Type × Count", do not change. */}
                   <td className="px-6 py-4 align-top">
-                    <div className="flex flex-col gap-1">
-                        <span className="text-zinc-300 text-sm font-medium">
-                            {job.gpu_type === 'CPU' ? 'CPU Only' : job.gpu_type.replace(/_/g, ' ')}
-                        </span>
-                        {job.gpu_type !== 'CPU' && (
-                             <span className="text-xs text-zinc-500">{job.gpu_count} unit(s)</span>
-                        )}
-                    </div>
+                      <span className="text-zinc-300 text-sm font-medium">
+                          {job.gpu_type === 'CPU' 
+                              ? 'CPU Only' 
+                              : `${job.gpu_type.replace(/_/g, ' ')} × ${job.gpu_count}`
+                          }
+                      </span>
                   </td>
 
-                  {/* Column 5: Creator (Updated) */}
+                  {/* Creator */}
                   <td className="px-6 py-4 align-top">
                     <div className="flex flex-col gap-2">
-                        {/* Avatar Component */}
                         <UserAvatar user={job.user} />
-                        <span className="text-xs text-zinc-500 pl-11">
-                           Created {formatTimeAgo(job.created_at)}
+                        <span className="text-xs text-zinc-500 pl-11 font-mono tracking-tight">
+                           {formatBeijingTime(job.created_at)}
                         </span>
                     </div>
                   </td>
 
-                  {/* Column 6: Actions */}
+                  {/* Actions */}
                   <td className="px-6 py-4 align-middle text-right">
                     <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
                       <button 
@@ -315,7 +290,7 @@ export default function JobsPage() {
         )}
       </div>
 
-      {/* --- Drawer --- */}
+      {/* Drawer */}
       {isDrawerOpen && (
         <div 
           onClick={() => setIsDrawerOpen(false)} 
