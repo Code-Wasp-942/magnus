@@ -4,16 +4,23 @@
 import { useState, useEffect, useRef } from "react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { NumberStepper } from "@/components/ui/number-stepper";
-import { client } from "@/lib/api"; // 👈 核心改动：引入统一 API 客户端
+import { client } from "@/lib/api"; 
 
-// 配置常量 (未来可移至全局 Config)
-const MAX_GPU_COUNT = 2;
+// --- Constants ---
+const MAX_GPU_COUNT = 8; // 稍微调大一点上限，方便测试
 const GPU_TYPES = [
   { label: "NVIDIA GeForce RTX 5090", value: "RTX_5090", meta: "32GB • Blackwell" },
   { label: "CPU Only", value: "CPU", meta: "Host Memory" },
 ];
 
-// --- 类型定义 ---
+const JOB_TYPES = [
+  { label: "A1 - 高优稳定", value: "A1", meta: "Non-Preemptible • Urgent" },
+  { label: "A2 - 次优稳定", value: "A2", meta: "Non-Preemptible" },
+  { label: "B1 - 高优可抢", value: "B1", meta: "Preemptible (High)" },
+  { label: "B2 - 次优可抢", value: "B2", meta: "Preemptible (Low)" },
+];
+
+// --- Types ---
 interface Branch { name: string; commit_sha: string; }
 interface Commit { sha: string; message: string; author: string; date: string; }
 
@@ -27,6 +34,7 @@ export interface JobFormData {
   entry_command: string;
   gpu_count: number;
   gpu_type: string;
+  job_type: string;
 }
 
 interface JobFormProps {
@@ -41,7 +49,7 @@ export default function JobForm({ mode, initialData, onCancel, onSuccess }: JobF
   const [taskName, setTaskName] = useState(initialData?.taskName || "");
   const [description, setDescription] = useState(initialData?.description || "");
 
-  const [namespace, setNamespace] = useState(initialData?.namespace || "PKU-Plasma"); // 默认值优化
+  const [namespace, setNamespace] = useState(initialData?.namespace || "PKU-Plasma");
   const [repoName, setRepoName] = useState(initialData?.repoName || "");
   
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -51,8 +59,10 @@ export default function JobForm({ mode, initialData, onCancel, onSuccess }: JobF
   const [selectedCommit, setSelectedCommit] = useState(initialData?.commit_sha || "");
   const [command, setCommand] = useState(initialData?.entry_command || "");
   
-  const [gpuCount, setGpuCount] = useState(initialData?.gpu_count || 1);
+  const [gpuCount, setGpuCount] = useState(initialData?.gpu_count ?? 1);
   const [gpuType, setGpuType] = useState(initialData?.gpu_type || ""); 
+  
+  const [jobType, setJobType] = useState(initialData?.job_type || "A2");
 
   const [loading, setLoading] = useState(false);
   const [hasScanned, setHasScanned] = useState(false);
@@ -60,11 +70,18 @@ export default function JobForm({ mode, initialData, onCancel, onSuccess }: JobF
   const [errorField, setErrorField] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  const isMounted = useRef(false);
+
   // --- Logic: GPU/CPU 联动 ---
   useEffect(() => {
+    if (!isMounted.current) {
+        isMounted.current = true;
+        return;
+    }
     if (gpuType === 'CPU') {
         setGpuCount(0);
     } else {
+        // 只有在用户手动切换类型时，才把 0 恢复为 1
         if (gpuCount === 0) setGpuCount(1);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -83,7 +100,6 @@ export default function JobForm({ mode, initialData, onCancel, onSuccess }: JobF
   useEffect(() => {
     if (mode === 'clone' && initialData) {
         setHasScanned(true); 
-        // 自动触发一次 fetch，确保下拉框有数据
         fetchBranches();
     }
   }, []); // eslint-disable-line
@@ -105,19 +121,14 @@ export default function JobForm({ mode, initialData, onCancel, onSuccess }: JobF
     setLoading(true);
     setErrorField(null); setErrorMessage(null);
 
-    // 如果是新建模式，扫描时清空旧选择
     if (mode === 'create') {
         setBranches([]); setCommits([]); setSelectedBranch(""); setSelectedCommit(""); 
     }
     
     try {
-      // ✅ 使用 client，自动处理 Auth，无需手动 headers
       const data = await client(`/api/github/${namespace}/${repoName}/branches`);
-      
       setBranches(data);
       setHasScanned(true);
-
-      // 默认选中第一个分支
       if (mode === 'create' && data.length > 0) {
         setSelectedBranch(data[0].name);
       }
@@ -130,17 +141,14 @@ export default function JobForm({ mode, initialData, onCancel, onSuccess }: JobF
     }
   };
 
-  // --- API 2: Fetch Commits (当分支改变时) ---
+  // --- API 2: Fetch Commits ---
   useEffect(() => {
     if (!selectedBranch || !hasScanned) return;
 
     const fetchCommits = async () => {
       try {
-        // ✅ 使用 client
         const data = await client(`/api/github/${namespace}/${repoName}/commits?branch=${selectedBranch}`);
         setCommits(data);
-        
-        // 默认选中第一个 Commit
         if (mode === 'create' && data.length > 0) {
             setSelectedCommit(data[0].sha);
         }
@@ -177,6 +185,7 @@ export default function JobForm({ mode, initialData, onCancel, onSuccess }: JobF
       entry_command: command, 
       gpu_count: gpuCount, 
       gpu_type: gpuType,
+      job_type: jobType, 
     };
     
     try {
@@ -285,29 +294,50 @@ export default function JobForm({ mode, initialData, onCancel, onSuccess }: JobF
         </div>
       </div>
 
-      {/* --- Section 3: Compute Resources --- */}
+      {/* --- Section 3: Job Scheduling (✅ 独立顶级板块) --- */}
+      <div>
+        <h3 className="text-zinc-200 text-sm font-semibold mb-4 flex items-center gap-2">
+            Job Scheduling
+            <div className="h-px bg-zinc-800 flex-grow ml-2"></div>
+        </h3>
+        
+        {/* 优先级选择器单独放在这里，不再和资源混淆 */}
+        <SearchableSelect 
+            label="Job Priority" 
+            value={jobType} 
+            onChange={setJobType} 
+            options={JOB_TYPES}
+            placeholder="Select Priority..."
+            className="mb-0" 
+        />
+      </div>
+
+      {/* --- Section 4: Compute Resources (仅包含 GPU) --- */}
       <div>
         <h3 className="text-zinc-200 text-sm font-semibold mb-4 flex items-center gap-2">
             Compute Resources
             <div className="h-px bg-zinc-800 flex-grow ml-2"></div>
         </h3>
-        <SearchableSelect 
-            label="GPU Accelerator" value={gpuType} onChange={setGpuType} 
-            options={GPU_TYPES}
-            placeholder="Select GPU model..."
-            className="mb-4"
-        />
-        <NumberStepper 
-            label="GPU Count"
-            value={gpuCount} 
-            onChange={setGpuCount} 
-            min={0}
-            max={MAX_GPU_COUNT}
-            disabled={gpuType === 'CPU'} 
-        />
+        
+        <div className="grid grid-cols-1 gap-4">
+            <SearchableSelect 
+                label="GPU Accelerator" value={gpuType} onChange={setGpuType} 
+                options={GPU_TYPES}
+                placeholder="Select GPU model..."
+                className="mb-4"
+            />
+            <NumberStepper 
+                label="GPU Count"
+                value={gpuCount} 
+                onChange={setGpuCount} 
+                min={0}
+                max={MAX_GPU_COUNT}
+                disabled={gpuType === 'CPU'} 
+            />
+        </div>
       </div>
 
-      {/* --- Section 4: Execution --- */}
+      {/* --- Section 5: Execution --- */}
       <div id="field-command">
         <h3 className="text-zinc-200 text-sm font-semibold mb-4 flex items-center gap-2">
             Execution

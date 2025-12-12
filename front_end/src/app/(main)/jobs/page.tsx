@@ -1,21 +1,20 @@
-// front_end/src/app/(main)/jobs/page.tsx
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Plus, Search, RefreshCw, Box, Rocket, Loader2, User as UserIcon } from "lucide-react";
+import { Plus, Search, RefreshCw, Box, Rocket, Loader2, User as UserIcon, Tag } from "lucide-react";
 import JobForm, { JobFormData } from "@/components/jobs/job-form";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { CopyableText } from "@/components/ui/copyable-text";
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import { client } from "@/lib/api";
 import { useAuth } from "@/context/auth-context";
+import { POLL_INTERVAL } from "@/lib/config";
 
-// --- Types ---
 interface User {
   id: string;
   name: string;
   avatar_url?: string;
-  email?: string; // Added for filter display
+  email?: string;
 }
 
 interface Job {
@@ -31,10 +30,10 @@ interface Job {
   gpu_count: number;
   gpu_type: string;
   entry_command: string;
+  job_type: string; 
   created_at: string;
 }
 
-// --- Components ---
 function UserAvatar({ user, subText }: { user?: User, subText?: React.ReactNode }) {
   if (!user) {
     return (
@@ -69,21 +68,31 @@ function UserAvatar({ user, subText }: { user?: User, subText?: React.ReactNode 
   );
 }
 
+function JobPriorityBadge({ type }: { type: string }) {
+  const isNoble = type && type.startsWith('A');
+  return (
+    <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-mono font-bold tracking-tight border shadow-sm select-none
+      ${isNoble 
+        ? 'bg-purple-500/10 text-purple-400 border-purple-500/30' 
+        : 'bg-zinc-800/80 text-zinc-400 border-zinc-700/50'
+      }`}>
+      {type || 'A2'}
+    </span>
+  );
+}
+
 export default function JobsPage() {
   const { user: currentUser } = useAuth();
 
-  // --- UI States ---
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [drawerMode, setDrawerMode] = useState<"create" | "clone">("create");
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [cloneData, setCloneData] = useState<JobFormData | null>(null);
 
-  // --- Data States ---
   const [jobs, setJobs] = useState<Job[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // --- Filter & Pagination States ---
   const [searchQuery, setSearchQuery] = useState(""); 
   const [debouncedQuery, setDebouncedQuery] = useState(""); 
   const [selectedUserId, setSelectedUserId] = useState(""); 
@@ -94,7 +103,6 @@ export default function JobsPage() {
 
   const skip = (currentPage - 1) * pageSize;
 
-  // --- 1. Fetch Users List ---
   useEffect(() => {
     const fetchUsers = async () => {
       try {
@@ -107,26 +115,25 @@ export default function JobsPage() {
     fetchUsers();
   }, []);
 
-  // --- 2. Build Filter Options ---
   const userFilterOptions = useMemo(() => {
     return [
       { 
         label: "All Users", 
         value: "", 
-        icon: "/api/logo" // Magnus Logo
+        icon: "/api/logo" 
       },
       ...allUsers.map(u => ({
         label: u.name,
         value: u.id,
         meta: u.email || "",
-        icon: u.avatar_url   // 用户真实头像
+        icon: u.avatar_url 
       }))
     ];
   }, [allUsers]);
 
-  // --- 3. Fetch Jobs ---
-  const fetchJobs = useCallback(async () => {
-    setLoading(true);
+  const fetchJobs = useCallback(async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
+    
     try {
       const params = new URLSearchParams({
         skip: skip.toString(),
@@ -148,11 +155,10 @@ export default function JobsPage() {
     } catch (e) {
       console.error("Backend offline?", e);
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   }, [skip, pageSize, debouncedQuery, selectedUserId]);
 
-  // --- Effects ---
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedQuery(searchQuery);
@@ -164,12 +170,15 @@ export default function JobsPage() {
     setCurrentPage(1);
   }, [debouncedQuery, selectedUserId]);
 
+  // Polling Mechanism
   useEffect(() => {
     fetchJobs();
+    const intervalId = setInterval(() => {
+      fetchJobs(true); 
+    }, POLL_INTERVAL);
+    return () => clearInterval(intervalId);
   }, [fetchJobs]); 
 
-
-  // --- Event Handlers ---
   const handleNewJob = () => {
     setDrawerMode("create");
     setCloneData(null); 
@@ -189,7 +198,8 @@ export default function JobsPage() {
         commit_sha: job.commit_sha,
         entry_command: job.entry_command,
         gpu_count: job.gpu_count,
-        gpu_type: job.gpu_type
+        gpu_type: job.gpu_type,
+        job_type: job.job_type,
     });
     setIsDrawerOpen(true);
   };
@@ -241,7 +251,6 @@ export default function JobsPage() {
         </div>
         <div className="h-6 w-px bg-zinc-800"></div>
         
-        {/* Dynamic User Filter */}
         <div className="w-56"> 
           <SearchableSelect
              value={selectedUserId}
@@ -270,15 +279,17 @@ export default function JobsPage() {
            </div>
         ) : (
           <>
+            
             <div className="overflow-x-auto first:rounded-t-xl w-full">
               <table className="w-full text-left text-sm whitespace-nowrap table-fixed">
                 <thead className="bg-zinc-900/90 text-zinc-500 border-b border-zinc-800 backdrop-blur-md">
                   <tr>
-                    <th className="px-6 py-4 font-medium w-[25%]">Task / Task ID</th>
-                    <th className="px-6 py-4 font-medium w-[10%]">Status</th>
-                    <th className="px-6 py-4 font-medium w-[20%]">Github Repo / Branch · Commit </th>
-                    <th className="px-6 py-4 font-medium w-[15%]">Resources</th>
-                    <th className="px-6 py-4 font-medium w-[20%]">Creator / Created at</th>
+                    <th className="px-6 py-4 font-medium w-[21%]">Task / Task ID</th>
+                    <th className="px-6 py-4 font-medium w-[8%] text-center">Priority</th>
+                    <th className="px-6 py-4 font-medium w-[13%] text-center">Status</th>
+                    <th className="px-6 py-4 font-medium w-[20%] text-center">Github Repo / Branch · Commit </th>
+                    <th className="px-6 py-4 font-medium w-[13%] text-center">Resources</th>
+                    <th className="px-6 py-4 font-medium w-[15%] text-center">Creator / Created at</th>
                     <th className="px-6 py-4 font-medium text-right w-[10%]"></th>
                   </tr>
                 </thead>
@@ -289,11 +300,13 @@ export default function JobsPage() {
                       {/* Task / Task ID */}
                       <td className="px-6 py-4 align-top whitespace-normal break-all">
                         <div className="flex flex-col gap-1.5">
-                          <CopyableText 
-                            text={job.task_name} 
-                            variant="text" 
-                            className="font-semibold text-zinc-200 text-base" 
-                          />
+                          <div className="flex items-center gap-2">
+                              <CopyableText 
+                                text={job.task_name} 
+                                variant="text" 
+                                className="font-semibold text-zinc-200 text-base" 
+                              />
+                          </div>
                           <div className="flex items-center gap-2">
                             <CopyableText text={job.id} className="text-[10px] uppercase tracking-wider" />
                           </div>
@@ -303,11 +316,17 @@ export default function JobsPage() {
                         </div>
                       </td>
 
+                      {/* Priority */}
+                      <td className="px-6 py-4 align-top text-center">
+                          <JobPriorityBadge type={job.job_type} />
+                      </td>
+
                       {/* Status */}
-                      <td className="px-6 py-4 align-top">
+                      <td className="px-6 py-4 align-top text-center">
                         <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold border shadow-sm
                           ${job.status === 'Running' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 
                             job.status === 'Failed' ? 'bg-red-500/10 text-red-400 border-red-500/20' : 
+                            job.status === 'Paused' ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' : 
                             job.status === 'Pending' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' :
                             'bg-green-500/10 text-green-400 border-green-500/20'}`}>
                           {job.status === 'Running' && <span className="relative flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-blue-500"></span></span>}
@@ -315,9 +334,9 @@ export default function JobsPage() {
                         </span>
                       </td>
 
-                      {/* Github Repo / Branch · Commit */}
+                      {/* Github */}
                       <td className="px-6 py-4 align-top">
-                          <div className="flex flex-col gap-1.5">
+                          <div className="flex flex-col gap-1.5 items-center">
                               <span className="text-zinc-300 flex items-center gap-2 text-xs font-medium bg-zinc-900/50 w-fit px-2 py-1 rounded border border-zinc-800">
                                 <Box className="w-3.5 h-3.5 text-zinc-500"/> 
                                 {job.namespace} / {job.repo_name}
@@ -325,7 +344,7 @@ export default function JobsPage() {
                               <div className="flex items-center gap-2 text-xs text-zinc-500 font-mono ml-1">
                                 <div className="w-1.5 h-1.5 rounded-full bg-zinc-600 flex-shrink-0"></div>
                                 <span 
-                                  className="truncate max-w-[80px] sm:max-w-[140px] xl:max-w-[180px]" 
+                                  className="truncate max-w-[80px] sm:max-w-[140px] xl:max-w-[200px]" 
                                   title={job.branch}
                                 >
                                   {job.branch}
@@ -339,7 +358,7 @@ export default function JobsPage() {
                       </td>
 
                       {/* Resources */}
-                      <td className="px-6 py-4 align-top">
+                      <td className="px-6 py-4 align-top text-center">
                           <span className="text-zinc-300 text-sm font-medium">
                               {job.gpu_type === 'CPU' 
                                   ? 'CPU Only' 
@@ -348,12 +367,14 @@ export default function JobsPage() {
                           </span>
                       </td>
 
-                      {/* Creator / Created at */}
+                      {/* Creator */}
                       <td className="px-6 py-4 align-top">
-                        <UserAvatar 
-                          user={job.user} 
-                          subText={formatBeijingTime(job.created_at)} 
-                        />
+                        <div className="flex justify-center">
+                            <UserAvatar 
+                              user={job.user} 
+                              subText={formatBeijingTime(job.created_at)} 
+                            />
+                        </div>
                       </td>
 
                       {/* Actions */}
@@ -374,7 +395,6 @@ export default function JobsPage() {
               </table>
             </div>
 
-            {/* Pagination Footer */}
             <div className="px-6 bg-zinc-900/30 border-t border-zinc-800 last:rounded-b-xl">
               <PaginationControls 
                 currentPage={currentPage}
@@ -392,7 +412,6 @@ export default function JobsPage() {
         )}
       </div>
 
-      {/* Drawer */}
       {isDrawerOpen && (
         <div 
           onClick={() => setIsDrawerOpen(false)} 

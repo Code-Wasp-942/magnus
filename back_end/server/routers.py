@@ -1,33 +1,33 @@
 import jwt
-from fastapi import status
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy import or_ # ✅ 新增 SQL 逻辑操作符
+from sqlalchemy.orm import Session
+from sqlalchemy import or_
+from typing import List, Optional
+
+# 导入本地模块
 from library import *
 from . import database
 from . import models
-from ._github_client import *
+from .models import JobStatus, JobType # 明确导入枚举
 from .schemas import *
-from .database import *
-from ._jwt_signer import *
-from ._feishu_client import *
-from ._magnus_config import *
-
+from ._github_client import github_client
+from ._jwt_signer import jwt_signer
+from ._feishu_client import feishu_client
+from ._magnus_config import magnus_config
 
 __all__ = [
     "router",
 ]
 
-
 router = APIRouter()
 
-
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/feishu/login")
-
 
 async def get_current_user(
     token: str = Depends(oauth2_scheme), 
     db: Session = Depends(database.get_db)
-)-> models.User:
+) -> models.User:
     
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -36,7 +36,6 @@ async def get_current_user(
     )
     
     try:
-        
         payload = jwt.decode(
             token, 
             magnus_config["server"]["jwt_signer"]["secret_key"], 
@@ -54,6 +53,7 @@ async def get_current_user(
         
     return user
 
+# ================= GitHub Routes =================
 
 @router.get("/github/{ns}/{repo}/branches")
 async def get_branches(ns: str, repo: str):
@@ -65,7 +65,6 @@ async def get_branches(ns: str, repo: str):
         )
     return branches
 
-
 @router.get("/github/{ns}/{repo}/commits")
 async def get_commits(
     ns: str, 
@@ -74,6 +73,7 @@ async def get_commits(
 ):
     return await github_client.fetch_commits(ns, repo, branch)
 
+# ================= Job Routes =================
 
 @router.post(
     "/jobs/submit", 
@@ -84,11 +84,20 @@ async def submit_job(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    
+    """
+    提交新任务。
+    注意：此接口不再直接与 SLURM 交互。
+    它只负责将任务写入数据库，状态设为 PENDING。
+    后台的 Scheduler 会自动捡起它并处理排队/抢占逻辑。
+    """
     job_dict = job_data.model_dump()
-    db_job = models.Job(**job_dict, user_id=current_user.id)
     
-    db_job.status = "Pending" 
+    # 创建任务对象
+    db_job = models.Job(
+        **job_dict, 
+        user_id=current_user.id,
+        status=JobStatus.PENDING # 显式设为排队状态
+    )
     
     db.add(db_job)
     db.commit()
@@ -96,20 +105,19 @@ async def submit_job(
     
     return db_job
 
-
 @router.get(
     "/jobs", 
-    response_model = PagedJobResponse, # ✅ 返回类型变更为分页结构
+    response_model = PagedJobResponse,
 )
 async def get_jobs(
     skip: int = 0, 
     limit: int = 100, 
-    search: Optional[str] = None, # ✅ 新增搜索参数
-    creator_id: Optional[str] = None, # ✅ 新增用户筛选参数
+    search: Optional[str] = None,
+    creator_id: Optional[str] = None,
     db: Session = Depends(database.get_db),
 ):
     """
-    支持分页、关键词搜索和用户筛选的任务列表接口
+    获取任务列表（分页 + 搜索 + 筛选）
     """
     query = db.query(models.Job)
 
@@ -127,16 +135,18 @@ async def get_jobs(
     if creator_id and creator_id != "all":
         query = query.filter(models.Job.user_id == creator_id)
 
-    # 3. 计算总数 (用于前端分页)
+    # 3. 计算总数
     total = query.count()
 
     # 4. 分页查询
+    # 按创建时间倒序
     jobs = query.order_by(models.Job.created_at.desc())\
             .offset(skip).limit(limit).all()
             
     return {"total": total, "items": jobs}
-        
-        
+
+# ================= Auth Routes =================
+
 @router.post(
     "/auth/feishu/login",
     response_model=LoginResponse,
@@ -145,7 +155,6 @@ async def feishu_login(
     req: FeishuLoginRequest, 
     db: Session = Depends(database.get_db),
 ):
-
     try:
         feishu_user = await feishu_client.get_feishu_user(req.code)
     except Exception as e:
@@ -180,8 +189,7 @@ async def feishu_login(
         "token_type": "bearer",
         "user": db_user,
     }
-    
-    
+
 @router.get(
     "/users",
     response_model=List[UserInfo],
@@ -189,8 +197,5 @@ async def feishu_login(
 async def get_users(
     db: Session = Depends(database.get_db),
 ):
-    """
-    获取所有注册用户列表，用于前端筛选器
-    """
     users = db.query(models.User).order_by(models.User.name).all()
     return users
