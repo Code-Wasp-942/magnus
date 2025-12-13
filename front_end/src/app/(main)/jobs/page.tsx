@@ -9,6 +9,7 @@ import { PaginationControls } from "@/components/ui/pagination-controls";
 import { client } from "@/lib/api";
 import { useAuth } from "@/context/auth-context";
 import { POLL_INTERVAL } from "@/lib/config";
+import { useRouter } from "next/navigation";
 
 interface User {
   id: string;
@@ -82,6 +83,7 @@ function JobPriorityBadge({ type }: { type: string }) {
 }
 
 export default function JobsPage() {
+  const router = useRouter();
   const { user: currentUser } = useAuth();
 
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -295,7 +297,11 @@ export default function JobsPage() {
                 </thead>
                 <tbody className="divide-y divide-zinc-800/50">
                   {jobs.map((job) => (
-                    <tr key={job.id} className="hover:bg-zinc-800/40 transition-colors group">
+                    <tr 
+                      key={job.id} 
+                      onClick={() => router.push(`/jobs/${job.id}`)}
+                      className="hover:bg-zinc-800/40 transition-colors group border-b border-zinc-800/50 last:border-0"
+                    >
                       
                       {/* Task / Task ID */}
                       <td className="px-6 py-4 align-top whitespace-normal break-all">
@@ -381,7 +387,10 @@ export default function JobsPage() {
                       <td className="px-6 py-4 align-middle text-right">
                         <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
                           <button 
-                              onClick={() => handleCloneJob(job)} 
+                              onClick={(e) => {
+                                  e.stopPropagation(); // 防止点击 Clone 跳进详情页
+                                  handleCloneJob(job); 
+                              }}
                               className="p-2 bg-zinc-800 hover:bg-zinc-700 hover:text-white rounded-lg text-zinc-400 transition-colors border border-zinc-700/50 shadow-sm" 
                               title="Clone & Rerun"
                           >

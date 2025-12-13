@@ -1,5 +1,7 @@
 # back_end/server/routers.py
+import os
 import jwt
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
@@ -20,6 +22,8 @@ __all__ = [
     "router",
 ]
 
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -145,6 +149,58 @@ async def get_jobs(
             .offset(skip).limit(limit).all()
             
     return {"total": total, "items": jobs}
+
+
+@router.get(
+    "/jobs/{job_id}",
+    response_model = JobResponse,
+)
+async def get_job_detail(
+    job_id: str,
+    db: Session = Depends(database.get_db),
+):
+    """
+    获取单个任务的详细信息
+    """
+    job = db.query(models.Job).filter(models.Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+@router.get(
+    "/jobs/{job_id}/logs"
+)
+async def get_job_logs(
+    job_id: str,
+    db: Session = Depends(database.get_db),
+):
+    """
+    获取任务的实时日志 (MVP方案: 直接全量读取 Slurm output 文件)
+    """
+    # 1. 确认任务存在
+    job = db.query(models.Job).filter(models.Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # 2. 构造日志路径
+    root_path = magnus_config['server']['root']
+    log_path = f"{root_path}/workspace/jobs/{job_id}/slurm/output.txt"
+
+    # 3. 读取日志
+    if not os.path.exists(log_path):
+        # 这种情况很正常：任务处于 Pending 状态，或者刚启动文件还没生成
+        return {"logs": "Waiting for output stream... (Job might be PENDING or Initializing)"}
+
+    try:
+        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+            content = f.read()
+        return {"logs": content}
+        
+    except Exception as e:
+        logger.error(f"Error reading log file for {job_id}: {e}")
+        return {"logs": f"Error reading logs: {str(e)}"}
+
 
 # ================= Auth Routes =================
 
