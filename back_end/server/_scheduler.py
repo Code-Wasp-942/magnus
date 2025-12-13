@@ -1,4 +1,5 @@
 # back_end/server/_scheduler.py
+import os
 import logging
 from datetime import datetime
 from sqlalchemy.orm import Session
@@ -28,7 +29,7 @@ class MagnusScheduler:
     ):
         # 初始化 SLURM 管理器；严格模式，无 SLURM 环境会报错
         try:
-            self.slurm = SlurmManager()
+            self.slurm_manager = SlurmManager()
             self.enabled = True
         except RuntimeError as e:
             logger.critical(f"Scheduler disabled due to missing SLURM: {e}")
@@ -71,11 +72,22 @@ class MagnusScheduler:
                 continue
 
             # 询问 SLURM 真实状态
-            real_status = self.slurm.check_job_status(job.slurm_job_id)
+            real_status = self.slurm_manager.check_job_status(job.slurm_job_id)
             
+            # 🔍 核心修改：基于信标的双重验证
             if real_status == "COMPLETED":
-                logger.info(f"Job {job.id} completed successfully.")
-                job.status = JobStatus.SUCCESS
+                # 构造信标路径 (Magnus 业务逻辑)
+                marker_path = f"{magnus_workspace_path}/jobs/{job.id}/.magnus_success"
+                
+                if os.path.exists(marker_path):
+                    # 信标存在 -> 真正的成功
+                    logger.info(f"Job {job.id} completed successfully (Marker Verified).")
+                    job.status = JobStatus.SUCCESS
+                else:
+                    # 信标不存在 -> 任务消失但未打卡 -> 视为失败 (scancel/crash)
+                    logger.warning(f"Job {job.id} disappeared from queue but NO success marker found. Marking FAILED.")
+                    job.status = JobStatus.FAILED
+                
                 job.slurm_job_id = None # 清理 ID
             
             elif real_status in ["FAILED", "CANCELLED", "TIMEOUT"]:
@@ -85,25 +97,28 @@ class MagnusScheduler:
             
             # 如果是 PENDING/RUNNING，保持不变，信任 SLURM
             
-        db.commit()
+            db.commit()
 
     
     def _make_decisions(
         self, 
         db: Session,
     ):
-        
         """
-        第二阶段：调度决策 (排队与抢占)
+        第二阶段：调度决策
+        策略：Strict FIFO Blocking (严格队首阻塞)
+        一旦高优先级任务因资源不足受阻，立即停止调度，防止后排小任务插队导致饥饿。
         """
         
-        real_free_gpus = self.slurm.get_cluster_free_gpus()
+        real_free_gpus = self.slurm_manager.get_cluster_free_gpus()
         
+        # 1. 获取所有待调度任务
         candidates = db.query(Job).filter(
             Job.status.in_([JobStatus.PENDING, JobStatus.PAUSED])
         ).all()
         if not candidates: return
 
+        # 2. 严格排序：优先级 (A1>A2>B1>B2) > 创建时间 (FIFO)
         priority_map = {
             JobType.A1: 4, JobType.A2: 3,
             JobType.B1: 2, JobType.B2: 1,
@@ -114,21 +129,25 @@ class MagnusScheduler:
         )
 
         for job in candidates:
+            job_launched = False
             
-            # 资源充足
+            # --- 尝试 A: 资源充足，直接启动 ---
             if real_free_gpus >= job.gpu_count:
                 if self._start_job(db, job):
                     real_free_gpus -= job.gpu_count
+                    job_launched = True
             
-            # 资源不充足，但是是 A 类，可以抢 B 类
+            # --- 尝试 B: A 类任务抢占 B 类 ---
             elif job.job_type in [JobType.A1, JobType.A2]:
                 needed = job.gpu_count - real_free_gpus
-                # 寻找受害者
+                
+                # 寻找受害者 (B类 Running)
                 potential_victims = db.query(Job).filter(
                     Job.status == JobStatus.RUNNING,
                     Job.job_type.in_([JobType.B1, JobType.B2])
                 ).all()
-                # LIFO 排序，干掉晚上机的 B 类、而不是搞掉跑了很长时间的 B 类
+                
+                # 优先杀晚启动的 (LIFO)
                 potential_victims.sort(
                     key = lambda x: x.start_time.timestamp() if x.start_time else 0, 
                     reverse = True,
@@ -138,24 +157,25 @@ class MagnusScheduler:
                 recovered_gpus = 0
                 
                 for v in potential_victims:
-                    if recovered_gpus >= needed:
-                        break
+                    if recovered_gpus >= needed: break
                     victims.append(v)
                     recovered_gpus += v.gpu_count
+                
+                # 仅当受害者足够填补缺口时才动手
                 if recovered_gpus >= needed:
-                    # 处决
+                    logger.info(f"Preemption: Job {job.id} (Type {job.job_type}) reclaiming {needed} GPUs.")
                     for v in victims: self._kill_and_pause(db, v)
-                    # 模拟资源释放
+                    
                     real_free_gpus += recovered_gpus
-                    # 启动大哥
                     if self._start_job(db, job):
                         real_free_gpus -= job.gpu_count
-                    else:
-                        pass
-                else:
-                    pass
-            else:
-                pass
+                        job_launched = True
+            
+            # --- 核心：阻塞逻辑 ---
+            if not job_launched:
+                # 队首任务受阻，立刻中断循环，禁止后续任务插队
+                logger.debug(f"Queue Blocked: Job {job.id} waiting for resources. Stopping scheduling.")
+                break
     
     
     def _start_job(
@@ -171,11 +191,31 @@ class MagnusScheduler:
         job_working_table = f"{magnus_workspace_path}/jobs/{job.id}"
         guarantee_file_exist(f"{job_working_table}/slurm", is_directory=True)
         
+        # 定义成功信标路径 (业务逻辑)
+        success_marker_path = f"{job_working_table}/.magnus_success"
+        
+        # 清理旧信标 (防止重试任务读取到上一次的成功状态)
+        if os.path.exists(success_marker_path):
+            try:
+                os.remove(success_marker_path)
+            except OSError:
+                pass
+
+        # 构造 Spy Command (间谍脚本)
+        # 逻辑：执行用户命令 -> 捕获退出码 -> 若为0则Touch信标 -> 退出并返回原退出码
+        # 这样 Slurm 依然能记录到 FAILED 状态（如果脚本返回非0），同时 Magnus 也能区分 scancel
+        spy_command = (
+            "#!/bin/bash\n"
+            "set -o errexit\n" # 遇到错误立即退出
+            f"{job.entry_command}\n"
+            f"touch '{success_marker_path}'\n"
+        )
+        
         try:
             # 这里的 submit_job 模拟了 --immediate 模式
             # 如果资源不足，会抛出 SlurmResourceError
-            slurm_id = self.slurm.submit_job(
-                entry_command = job.entry_command, 
+            slurm_id = self.slurm_manager.submit_job(
+                entry_command = spy_command,  # 传入劫持后的命令
                 gpus = job.gpu_count,
                 job_name = job.task_name,
                 gpu_type = job.gpu_type,
@@ -216,7 +256,7 @@ class MagnusScheduler:
         """
         if job.slurm_job_id:
             logger.info(f"Killing victim job {job.id} (SLURM: {job.slurm_job_id})")
-            self.slurm.kill_job(job.slurm_job_id)
+            self.slurm_manager.kill_job(job.slurm_job_id)
         
         job.status = JobStatus.PAUSED
         job.slurm_job_id = None

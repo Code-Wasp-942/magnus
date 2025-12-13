@@ -44,36 +44,78 @@ class SlurmManager:
 
     
     def get_cluster_free_gpus(
-        self
+        self,
     )-> int:
         
+        """
+        获取集群空闲 GPU 总数
+        
+        策略:
+        1. 供给侧: 解析 scontrol show node 获取集群 GPU 总容量 (Configured)
+        2. 需求侧: 解析 squeue 统计所有正在运行任务的 GPU 占用量 (Allocated)
+        3. 结果 = 容量 - 占用
+        """
+        
         try:
-            # 获取所有 idle 或 mixed 节点的 GPU 信息
-            command = ["sinfo", "-h", "-o", "%G %t"]
-            result = subprocess.run(command, capture_output=True, text=True, check=True)
-            total_free = 0
-            for line in result.stdout.strip().split('\n'):
-                parts = line.split()
-                if len(parts) < 2:
-                    continue
-                gres, state = parts[0], parts[1]
-                
-                # 简单粗暴的解析：如果是 idle，假设该节点所有 GPU 空闲
-                # 这是一个简化策略，实际生产环境可能需要根据 Site Configuration 调整
-                if "gpu" in gres and state == "idle":
+            # --- 步骤 1: 获取总容量 (Configured) ---
+            # 我们相信 Gres 定义，这是物理真理
+            cmd_capacity = ["scontrol", "show", "node", "--future"]
+            res_capacity = subprocess.run(cmd_capacity, capture_output=True, text=True, check=True)
+            
+            total_capacity = 0
+            for line in res_capacity.stdout.split('\n'):
+                line = line.strip()
+                # 解析 Gres=gpu:rtx5090:2 或 Gres=gpu:2(S:0)
+                if line.startswith("Gres=") and "gpu" in line:
                     try:
-                        # 解析 "gpu:A100:8" 或 "gpu:8" 中的最后一个数字
-                        count = int(gres.split(':')[-1]) 
-                        total_free += count
-                    except ValueError:
+                        # 1. 拿到 "gpu:rtx5090:2" 或 "gpu:2(S:0)"
+                        gres_part = line.split("Gres=")[1].split()[0]
+                        # 2. 去掉可能的括号 "gpu:2"
+                        gres_part = gres_part.split('(')[0]
+                        # 3. 取最后一个冒号后的数字
+                        count = int(gres_part.split(':')[-1])
+                        total_capacity += count
+                    except (ValueError, IndexError):
                         pass
-                        
+
+            # --- 步骤 2: 获取当前占用 (Allocated) ---
+            # 既然 AllocTRES 不靠谱，我们直接统计 RUNNING 状态的任务申请了多少资源
+            # %D: 节点数, %b: 每个节点的 GRES (例如 gpu:rtx5090:1)
+            cmd_usage = ["squeue", "--states=RUNNING", "--noheader", "--format=%D %b"]
+            res_usage = subprocess.run(cmd_usage, capture_output=True, text=True, check=True)
+            
+            total_allocated = 0
+            for line in res_usage.stdout.strip().split('\n'):
+                if not line.strip(): continue
+                
+                parts = line.split(maxsplit=1)
+                # 如果 parts 长度小于2，说明该任务没有申请 GRES (纯 CPU 任务)，跳过
+                if len(parts) < 2: continue 
+                
+                num_nodes_str, gres_req = parts[0], parts[1]
+                
+                if "gpu" not in gres_req:
+                    continue
+
+                try:
+                    num_nodes = int(num_nodes_str)
+                    # 解析 gpu:rtx5090:1 或 gpu:1，处理可能出现的括号
+                    gres_req = gres_req.split('(')[0]
+                    gpu_per_node = int(gres_req.split(':')[-1])
+                    
+                    total_allocated += (num_nodes * gpu_per_node)
+                except (ValueError, IndexError):
+                    pass
+            
+            # --- 步骤 3: 计算空闲 ---
+            total_free = max(0, total_capacity - total_allocated) 
             return total_free
+
         except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to execute sinfo: {e.stderr}")
+            logger.error(f"Failed to query cluster status: {e.stderr}")
             return 0
         except Exception as e:
-            logger.error(f"Error querying cluster resources: {e}\n调用栈：\n{traceback.format_exc()}")
+            logger.error(f"Error calculating free GPUs: {e}\n{traceback.format_exc()}")
             return 0
     
     

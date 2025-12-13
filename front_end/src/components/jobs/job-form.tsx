@@ -60,7 +60,7 @@ export default function JobForm({ mode, initialData, onCancel, onSuccess }: JobF
   // Logic: 如果初始数据是 0 GPU，强制类型为 CPU，防止前端状态不一致
   const [gpuCount, setGpuCount] = useState(initialData?.gpu_count ?? 1);
   const [gpuType, setGpuType] = useState(
-    initialData?.gpu_type || (initialData?.gpu_count === 0 ? "CPU" : "")
+    initialData?.gpu_type || (initialData?.gpu_count === 0 ? "cpu" : "")
   ); 
   
   const [jobType, setJobType] = useState(initialData?.job_type || "A2");
@@ -91,10 +91,10 @@ export default function JobForm({ mode, initialData, onCancel, onSuccess }: JobF
   // --- Handlers ---
   const handleGpuTypeChange = (val: string) => {
     setGpuType(val);
-    if (val === 'CPU') {
+    if (val === 'cpu') {
         setGpuCount(0);
     } else {
-        // 如果从 CPU (0) 切回 GPU，且当前数量为 0，则自动设为 1
+        // 如果从 cpu (0) 切回 GPU，且当前数量为 0，则自动设为 1
         if (gpuCount === 0) setGpuCount(1);
     }
   };
@@ -322,7 +322,7 @@ export default function JobForm({ mode, initialData, onCancel, onSuccess }: JobF
                 onChange={setGpuCount} 
                 min={0}
                 max={MAX_GPU_COUNT}
-                disabled={gpuType === 'CPU'} 
+                disabled={gpuType === 'cpu'} 
             />
         </div>
       </div>
