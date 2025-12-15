@@ -1,9 +1,10 @@
 # back_end/server/_scheduler.py
 import os
 import logging
+import traceback
 from datetime import datetime
 from sqlalchemy.orm import Session
-from pywheels.file_tools import guarantee_file_exist
+from pywheels.file_tools import guarantee_file_exist, delete_file
 from .database import SessionLocal
 from .models import Job, JobStatus, JobType
 from library.functional._slurm_manager import SlurmManager, SlurmResourceError
@@ -34,6 +35,7 @@ class MagnusScheduler:
         except RuntimeError as e:
             logger.critical(f"Scheduler disabled due to missing SLURM: {e}")
             self.enabled = False
+
 
     def tick(
         self,
@@ -86,12 +88,15 @@ class MagnusScheduler:
                     logger.warning(f"Job {job.id} disappeared from queue but NO success marker found. Marking FAILED.")
                     job.status = JobStatus.FAILED
                 
-                job.slurm_job_id = None # 清理 ID
+                job.slurm_job_id = None
+                # 我们的爱情故事 不会再改变
+                self._clean_up_working_table(job.id)
             
             elif real_status in ["FAILED", "CANCELLED", "TIMEOUT"]:
                 logger.warning(f"Job {job.id} failed in SLURM (Status: {real_status}).")
                 job.status = JobStatus.FAILED
                 job.slurm_job_id = None
+                self._clean_up_working_table(job.id)
             
             # 如果是 PENDING/RUNNING，保持不变，信任 SLURM
             
@@ -355,6 +360,23 @@ if __name__ == "__main__":
         job.slurm_job_id = None
         job.start_time = None
         db.commit()
-
+        
+        
+    def _clean_up_working_table(
+        self,
+        job_id: str,
+    )-> None:
+        
+        job_working_table = f"{magnus_workspace_path}/jobs/{job_id}"
+        try:
+            delete_file(os.path.join(job_working_table, "repository"))
+            delete_file(os.path.join(job_working_table, "wrapper.py"))
+            delete_file(os.path.join(job_working_table, ".magnus_success"))
+        except Exception as error:
+            logger.warning(
+                f"Clean up working table of job {job_id} failed:\n{error}\n"
+                f"Traceback:\n{traceback.format_exc()}"
+            )
+            
 
 scheduler = MagnusScheduler()
