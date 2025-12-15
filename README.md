@@ -6,7 +6,7 @@
 ![Next.js](https://img.shields.io/badge/Next.js-14-black)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-teal)
 
-**Magnus** 是一个为 PKU-Plasma 设计的全栈科学计算与机器学习平台，集成了智能调度、资源监控、用户认证等企业级功能。
+**Magnus** 是 PKU-Plasma 的科学计算与机器学习计算基础设施，集成了智能调度、资源监控、用户认证等企业级功能。
 
 ## 🚀 核心特性
 
@@ -42,21 +42,20 @@ Magnus-Platform/
 │   └── magnus_config.yaml     # 主配置文件
 ├── back_end/                  # Python 后端服务
 │   ├── server/               # FastAPI 服务器
-│   │   ├── _scheduler.py     # 🆕 核心调度器模块
+│   │   ├── _scheduler.py     # 核心调度器模块
 │   │   ├── models.py         # 数据库模型 (含枚举类型)
 │   │   ├── routers.py        # API 路由定义
 │   │   ├── schemas.py        # Pydantic 数据模型
 │   │   └── main.py           # 应用入口 (含调度器后台任务)
 │   ├── library/              # 核心库模块
 │   │   ├── functional/       # 功能模块
-│   │   │   └── _slurm_manager.py  # 🆕 SLURM集群管理器
+│   │   │   └── _slurm_manager.py  # SLURM集群管理器
 │   │   └── fundamental/      # 基础工具模块
 │   ├── python_scripts/      # 脚本目录
 │   │   └── tests/           # 测试工具
 │   │       └── test_rtx5090_nvlink.py  # GPU互联测试
 │   ├── pyproject.toml        # Python 项目配置
-│   ├── run.py               # 后端启动入口
-│   └── run.sh               # 启动脚本
+│   └── run.sh               # SLURM测试脚本
 └── front_end/               # Next.js 前端应用
     ├── src/app/             # Next.js App Router
     │   ├── (main)/          # 主应用页面组
@@ -107,7 +106,7 @@ Magnus-Platform/
 - **Node.js**: 最新 LTS 版本
 - **SLURM 集群**: 完整的 SLURM 环境 (sbatch, squeue, scancel, sinfo)
 - **飞书应用**: 需要在飞书开放平台创建应用
-- **GitHub Token**: 用于访问 GitHub 仓库
+- **GitHub SSH密钥**: 用于访问 GitHub 仓库
 
 ### 1. 配置设置
 
@@ -115,23 +114,28 @@ Magnus-Platform/
 
 ```yaml
 server:
-  root: /data/zycai/magnus_data        # 数据存储根目录
-  port: 8017                           # 服务器端口，可自由设置
-  database: 
-    path: /data/zycai/magnus-database  # 数据库路径
+  public_ip: 162.105.151.196          # 公网IP地址
+  front_end_port: 3011                # 前端端口
+  back_end_port: 8017                 # 后端端口
+  root: /data/zycai/magnus_data       # 数据存储根目录
+  
   jwt_signer:
     secret_key: "your-secret-key"      # JWT 密钥
     algorithm: HS256
     expire_minutes: 10080              # 7天有效期
+  
   github_client:
     token: "ghp_..."                   # GitHub Personal Access Token
+  
   feishu_client:
     app_id: "your-app-id"              # 飞书应用 ID
     app_secret: "your-app-secret"      # 飞书应用密钥
-    redirect_uri: "http://localhost:3000/auth/callback"  # 回调地址
+  
   scheduler:
     heartbeat_interval: 2              # 调度器心跳间隔(秒)
     slurm_latency: 1                   # SLURM 延迟容忍(秒)
+    conda_shell_script_path: /path/to/miniconda3/etc/profile.d/conda.sh
+    execution_conda_environment: magnus  # 执行环境
 ```
 
 ### 2. 后端启动
@@ -144,15 +148,13 @@ cd back_end
 uv sync
 
 # 启动后端服务器
-uv run run.py
-# 或使用启动脚本
-./run.sh
+uv run -m server.main
 ```
 
 后端启动后会自动：
 - 创建数据库表结构
 - 启动调度器后台任务
-- 监听 0.0.0.0:8017
+- 监听配置文件中指定的端口
 
 ### 3. 前端启动
 
@@ -167,16 +169,16 @@ npm install
 npm run dev
 ```
 
-前端启动后访问：http://localhost:3000
+前端启动后访问配置文件中指定的地址。
 
 ## 📖 使用指南
 
 ### 用户认证
-1. 访问 http://localhost:3000
+1. 访问前端地址
 2. 点击登录按钮，使用飞书扫码登录
 3. 系统会自动创建用户账户并返回 JWT 令牌
 
-### 提交训练任务
+### 提交计算任务
 1. 进入 "Jobs" 页面
 2. 点击 "New Job" 按钮
 3. 填写任务信息：
@@ -253,7 +255,7 @@ npm run dev
 项目包含 GPU 互联测试工具，用于检测 GPU 间的数据传输性能：
 
 ```bash
-cd back_end/scripts/tests/test_rtx5090_nvlink
+cd back_end/python_scripts/tests
 python test_rtx5090_nvlink.py
 ```
 
