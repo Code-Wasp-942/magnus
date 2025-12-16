@@ -153,7 +153,7 @@ export default function ClusterPage() {
                             <CopyableText text={job.task_name} variant="text" className="font-semibold text-zinc-200 text-base" />
                         </div>
                         <div className="flex items-center gap-2">
-                          <CopyableText text={job.id} className="text-[10px] uppercase tracking-wider" />
+                          <CopyableText text={job.id} className="text-[10px] tracking-wider" />
                         </div>
                         {job.description && (
                           <p className="text-zinc-500 text-xs line-clamp-1 mt-0.5">{job.description}</p>

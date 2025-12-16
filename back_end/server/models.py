@@ -23,6 +23,7 @@ class JobType(str, enum.Enum):
     A2 = "A2"  # 次优稳定
     B1 = "B1"  # 高优可抢
     B2 = "B2"  # 次优可抢
+    EXTERNAL = "N/A" # 外部任务
 
 
 class JobStatus(str, enum.Enum):

@@ -168,7 +168,7 @@ export default function DashboardPage() {
                         <td className="px-6 py-4 align-top whitespace-normal break-all">
                             <div className="flex flex-col gap-1.5">
                                 <span className="font-semibold text-zinc-200 text-base">{job.task_name}</span>
-                                <CopyableText text={job.id} className="text-[10px] uppercase tracking-wider" />
+                                <CopyableText text={job.id} className="text-[10px] tracking-wider" />
                             </div>
                         </td>
                         <td className="px-6 py-4 align-top text-center">

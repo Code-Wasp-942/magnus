@@ -98,8 +98,8 @@ async def submit_job(
 ):
     """
     提交新任务。
-    注意：此接口不再直接与 SLURM 交互，只负责写入数据库 (PENDING)。
-    后台 Scheduler 会自动处理排队/抢占逻辑。
+    注意：此接口只负责将任务写入数据库并标记为 PENDING。
+    后续的资源检查、抢占决策和 sbatch 提交由后台 _scheduler.py 负责。
     """
     job_dict = job_data.model_dump()
     
@@ -171,7 +171,8 @@ async def get_job_logs(
     db: Session = Depends(database.get_db),
 ):
     """
-    获取任务实时日志 (直接读取 Slurm output 文件)
+    获取任务实时日志。
+    直接读取文件系统中 Slurm 生成的 output.txt，而非查库。
     """
     job = db.query(models.Job).filter(models.Job.id == job_id).first()
     if not job:
@@ -184,6 +185,7 @@ async def get_job_logs(
         return {"logs": "Waiting for output stream... (Job might be PENDING or Initializing)"}
 
     try:
+        # 使用 errors="replace" 防止二进制数据或编码错误导致 API 崩溃
         with open(log_path, "r", encoding="utf-8", errors="replace") as f:
             content = f.read()
         return {"logs": content}
@@ -200,7 +202,10 @@ async def terminate_job(
     current_user: models.User = Depends(get_current_user),
 ):
     """
-    用户主动终止任务：scancel + DB状态更新
+    用户主动终止任务。
+    动作：
+    1. 调用 squeue/scancel 杀掉 Slurm 进程
+    2. 将数据库状态置为 TERMINATED
     """
     job = db.query(models.Job).filter(models.Job.id == job_id).first()
     if not job:
@@ -229,6 +234,7 @@ async def terminate_job(
 def _scheduler_sort_key(job):
     """
     复刻调度器排序逻辑：优先级 (A1>A2>B1>B2) > 时间 (FIFO)
+    保持此逻辑与 _scheduler.py 一致至关重要，否则前端展示顺序会误导用户
     """
     priority_map = {
         JobType.A1: 4, JobType.A2: 3,
@@ -240,37 +246,102 @@ def _scheduler_sort_key(job):
 
 @router.get(
     "/cluster/stats",
-    response_model=ClusterStatsResponse,
+    response_model = ClusterStatsResponse,
 )
 async def get_cluster_stats(
     db: Session = Depends(database.get_db),
 ):
-    # 1. Running Jobs (按开始时间倒序，最新跑的在上面)
-    running_jobs_orm = db.query(models.Job).filter(
-        models.Job.status == JobStatus.RUNNING
-    ).order_by(models.Job.start_time.desc()).all()
+    
+    # --- 1. 获取 Slurm 真理 (Absolute Truth) ---
+    # 核心原则：Running 列表必须完全由 Slurm 决定，解决手动 scancel 后数据库状态滞后的 Bug
+    slurm_manager = SlurmManager()
+    all_slurm_tasks = slurm_manager.get_all_running_tasks()
+    
+    running_slurm_ids = [task["id"] for task in all_slurm_tasks]
 
-    # 2. Pending Jobs (复刻调度器逻辑)
+    # --- 2. 数据库元数据匹配 ---
+    # 拿着 Slurm 的名单去数据库里"认领"任务 (Enrichment)
+    magnus_jobs_orm = []
+    if running_slurm_ids:
+        magnus_jobs_orm = db.query(models.Job).filter(
+            models.Job.slurm_job_id.in_(running_slurm_ids)
+        ).all()
+    
+    magnus_job_map = {job.slurm_job_id: job for job in magnus_jobs_orm}
+
+    # --- 3. 构造最终列表 ---
+    final_running_jobs: List[JobResponse] = []
+    
+    for task in all_slurm_tasks:
+        slurm_id = task["id"]
+        
+        if slurm_id in magnus_job_map:
+            # Case A: Magnus 任务
+            # 使用数据库元数据，但强制状态为 Running (以 Slurm 为准)
+            job_orm = magnus_job_map[slurm_id]
+            job_resp = JobResponse.model_validate(job_orm)
+            job_resp.status = JobStatus.RUNNING
+            final_running_jobs.append(job_resp)
+            
+        else:
+            # Case B: External 任务
+            # 现场 Mock 对象，绝不入库
+            mock_user = UserInfo(
+                id = f"slurm_{task['user']}",
+                name = f"{task['user']} (slurm)",
+                avatar_url = "/images/slurm_avatar.png",
+                email = None,
+            )
+            
+            try:
+                start_dt = datetime.fromisoformat(task["start_time"])
+            except ValueError:
+                start_dt = datetime.now()
+
+            mock_job = JobResponse(
+                task_name = task["name"],
+                description = "External slurm task",
+                namespace = "External",
+                repo_name = "N/A",
+                branch = "N/A",
+                commit_sha = "N/A",
+                entry_command = "<binary execution>",
+                gpu_type = task["gpu_type"].lower().replace(" ", ""),
+                gpu_count = task["gpu_count"],
+                job_type = JobType.EXTERNAL,
+                
+                id = f"{slurm_id} (slurm)",
+                user_id = mock_user.id,
+                status = JobStatus.RUNNING,
+                slurm_job_id = slurm_id,
+                start_time = start_dt,
+                created_at = start_dt,
+                user = mock_user
+            )
+            final_running_jobs.append(mock_job)
+
+    # --- 4. 排序 ---
+    # 规则: Magnus 任务在上，External 任务在下；各组内按时间倒序
+    magnus_group = [j for j in final_running_jobs if j.job_type != JobType.EXTERNAL]
+    external_group = [j for j in final_running_jobs if j.job_type == JobType.EXTERNAL]
+    
+    magnus_group.sort(key = lambda x: x.start_time or datetime.min, reverse = True)
+    external_group.sort(key = lambda x: x.start_time or datetime.min, reverse = True)
+    
+    sorted_running_jobs = magnus_group + external_group
+
+    # --- 5. Pending Jobs ---
+    # Pending 状态依然以数据库为准，配合 Scheduler 的调度逻辑
     pending_jobs_orm = db.query(models.Job).filter(
         models.Job.status.in_([JobStatus.PENDING, JobStatus.PAUSED])
     ).all()
     
-    pending_jobs_orm.sort(key=_scheduler_sort_key, reverse=True)
-
-    # 显式手动转换为 Pydantic 模型，触发懒加载
-    running_jobs = [JobResponse.model_validate(job) for job in running_jobs_orm]
+    pending_jobs_orm.sort(key = _scheduler_sort_key, reverse = True)
     pending_jobs = [JobResponse.model_validate(job) for job in pending_jobs_orm]
 
-    # --- 资源计算 (Magnus 视角) ---
-    slurm_manager = SlurmManager()
-    
-    # n1: Slurm 系统级空闲
+    # --- 6. 资源计算 ---
     n1_free = slurm_manager.get_cluster_free_gpus()
-    
-    # n2: Magnus 平台正在使用的 GPU (累加 Running 任务的 gpu_count)
-    n2_used = sum(job.gpu_count for job in running_jobs_orm)
-    
-    # 动态总算力 = 当前 Magnus 用掉的 + 剩余还能抢的
+    n2_used = sum(job.gpu_count for job in sorted_running_jobs)
     display_total = n1_free + n2_used
 
     return {
@@ -281,7 +352,7 @@ async def get_cluster_stats(
             "free": n1_free,
             "used": n2_used,
         },
-        "running_jobs": running_jobs,
+        "running_jobs": sorted_running_jobs,
         "pending_jobs": pending_jobs,
     }
 
@@ -350,6 +421,7 @@ async def feishu_login(
         db.commit()
         db.refresh(db_user)
     else:
+        # 更新用户信息
         db_user.name = feishu_user.get("name", db_user.name)
         db_user.avatar_url = feishu_user.get("avatar_url", db_user.avatar_url)
         db.commit()
