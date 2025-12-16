@@ -141,9 +141,9 @@ def main():
     username = args.username
 
     # 1. Root 检查
-    if os.geteuid() != 0:
-        log("错误: 必须以 Root 身份运行。", "ERROR")
-        sys.exit(1)
+    # if os.geteuid() != 0:
+    #     log("错误: 必须以 Root 身份运行。", "ERROR")
+    #     sys.exit(1)
 
     # 2. 探测 GPU
     gpu_ids = get_physical_gpus()
