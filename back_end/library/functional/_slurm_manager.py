@@ -47,94 +47,75 @@ class SlurmManager:
             raise RuntimeError(error_msg)
 
 
-    def get_cluster_free_gpus(
-        self,
-    ) -> int:
-        
+    def _get_capacity_and_usage(self) -> tuple[int, int]:
         """
-        获取集群空闲 GPU 总数
-        
-        实现策略：
-        1. 供给侧 (Supply): 通过 scontrol 获取节点配置的物理总容量 (Configured Gres)
-        2. 需求侧 (Demand): 通过 squeue 统计当前 RUNNING 任务实际占用的资源 (Allocated)
-        3. 空闲 = Max(0, 供给 - 需求)
-        注意：此逻辑依赖 Gres 定义格式，需适配具体的 Slurm 配置 (如 gpu:model:count)
+        [Internal] 复用逻辑：获取 (总容量, 当前总占用)
         """
-        
         try:
             # --- 步骤 1: 获取总容量 (Configured) ---
             cmd_capacity = ["scontrol", "show", "node", "--future"]
             res_capacity = subprocess.run(
-                cmd_capacity, 
-                capture_output = True, 
-                text = True, 
-                check = True
+                cmd_capacity, capture_output=True, text=True, check=True
             )
             
             total_capacity = 0
-            
             for line in res_capacity.stdout.split('\n'):
                 line = line.strip()
-                
-                # 解析逻辑：提取 Gres=gpu:rtx5090:2 或 Gres=gpu:2(S:0) 中的数量
                 if line.startswith("Gres=") and "gpu" in line:
                     try:
-                        gres_part = line.split("Gres=")[1].split()[0]
-                        gres_part = gres_part.split('(')[0] # 去掉括号后缀
-                        count = int(gres_part.split(':')[-1]) # 取最后一位数字
+                        gres_part = line.split("Gres=")[1].split()[0].split('(')[0]
+                        count = int(gres_part.split(':')[-1])
                         total_capacity += count
                     except (ValueError, IndexError):
                         pass
 
             # --- 步骤 2: 获取当前占用 (Allocated) ---
-            # 直接统计 RUNNING 状态任务申请的资源，格式说明：%D=节点数, %b=GRES详情
             cmd_usage = ["squeue", "--states=RUNNING", "--noheader", "--format=%D %b"]
             res_usage = subprocess.run(
-                cmd_usage, 
-                capture_output = True, 
-                text = True, 
-                check = True
+                cmd_usage, capture_output=True, text=True, check=True
             )
             
             total_allocated = 0
-            
             for line in res_usage.stdout.strip().split('\n'):
-                if not line.strip():
-                    continue
-                
-                parts = line.split(maxsplit = 1)
-                
-                # 过滤掉纯 CPU 任务 (没有申请 GRES)
-                if len(parts) < 2:
-                    continue 
+                if not line.strip(): continue
+                parts = line.split(maxsplit=1)
+                if len(parts) < 2: continue
                 
                 num_nodes_str, gres_req = parts[0], parts[1]
-                
-                if "gpu" not in gres_req:
-                    continue
+                if "gpu" not in gres_req: continue
 
                 try:
                     num_nodes = int(num_nodes_str)
-                    
-                    # 解析申请量：gpu:rtx5090:1 -> 1
                     gres_req = gres_req.split('(')[0]
                     gpu_per_node = int(gres_req.split(':')[-1])
-                    
                     total_allocated += (num_nodes * gpu_per_node)
                 except (ValueError, IndexError):
                     pass
             
-            # --- 步骤 3: 计算空闲 ---
-            total_free = max(0, total_capacity - total_allocated) 
-            return total_free
+            return total_capacity, total_allocated
 
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to query cluster status: {e.stderr}")
-            return 0
-            
         except Exception as e:
-            logger.error(f"Error calculating free GPUs: {e}\n{traceback.format_exc()}")
-            return 0
+            logger.error(f"Error querying cluster resources: {e}")
+            return 0, 0
+
+
+    def get_cluster_free_gpus(
+        self
+    )-> int:
+        
+        cap, alloc = self._get_capacity_and_usage()
+        return max(0, cap - alloc)
+
+
+    def get_resource_snapshot(
+        self,
+    )-> dict:
+        
+        cap, alloc = self._get_capacity_and_usage()
+        return {
+            "total_gpus": cap,
+            "slurm_used_gpus": alloc
+        }
 
 
     def submit_job(

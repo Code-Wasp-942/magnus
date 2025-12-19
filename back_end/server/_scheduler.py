@@ -6,7 +6,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from pywheels.file_tools import guarantee_file_exist, delete_file
 from .database import SessionLocal
-from .models import Job, JobStatus, JobType
+from .models import Job, JobStatus, JobType, ClusterSnapshot
 from library.functional._slurm_manager import SlurmManager, SlurmResourceError
 from ._magnus_config import magnus_config
 
@@ -35,6 +35,8 @@ class MagnusScheduler:
         except RuntimeError as e:
             logger.critical(f"Scheduler disabled due to missing SLURM: {e}")
             self.enabled = False
+            
+        self.last_snapshot_time = datetime.min
 
 
     def tick(
@@ -51,8 +53,49 @@ class MagnusScheduler:
             try:
                 self._sync_reality(db)
                 self._make_decisions(db)
+                self._record_snapshot(db)
             except Exception as e:
                 logger.error(f"Scheduler tick failed: {e}", exc_info=True)
+                
+        
+    def _record_snapshot(
+        self, 
+        db: Session,
+    ):
+        """
+        记录集群资源快照
+        """
+        now = datetime.utcnow()
+        if (now - self.last_snapshot_time).total_seconds() < \
+            magnus_config["server"]["scheduler"]["snapshot_interval"]:
+            return
+
+        try:
+            # 1. 获取 Slurm 侧的物理数据
+            slurm_stats = self.slurm_manager.get_resource_snapshot()
+            
+            # 2. 获取 Magnus 侧的逻辑占用 (查库)
+            # 统计所有 RUNNING 状态任务的 gpu_count 之和
+            # 使用 func.sum 需要引入 sqlalchemy.sql.func，这里用 Python sum 简单处理避免改 import
+            running_jobs = db.query(Job).filter(Job.status == JobStatus.RUNNING).all()
+            magnus_usage = sum(job.gpu_count for job in running_jobs)
+            
+            # 3. 入库
+            snapshot = ClusterSnapshot(
+                total_gpus = slurm_stats["total_gpus"],
+                slurm_used_gpus = slurm_stats["slurm_used_gpus"],
+                magnus_used_gpus = magnus_usage,
+                timestamp = now
+            )
+            db.add(snapshot)
+            db.commit()
+            
+            # 更新时间戳
+            self.last_snapshot_time = now
+            logger.debug(f"Recorded Cluster Snapshot: Total={snapshot.total_gpus}, Used={snapshot.slurm_used_gpus}, Magnus={magnus_usage}")
+            
+        except Exception as e:
+            logger.error(f"Failed to record cluster snapshot: {e}")
 
     
     def _sync_reality(

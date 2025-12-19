@@ -4,7 +4,7 @@ import jwt
 import logging
 import asyncio
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -386,6 +386,46 @@ async def get_my_active_jobs(
     all_jobs_orm = running_orm + queued_orm
     
     return [JobResponse.model_validate(job) for job in all_jobs_orm]
+
+
+@router.get("/dashboard/stats")
+async def get_dashboard_stats(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(database.get_db),
+):
+    """
+    Dashboard 统计接口:
+    - Occupancy (占有率): 真实数据 (基于 ClusterSnapshot 历史平均)
+    - Utilization (利用率): Mock 数据 (因为没有 DCGM 监控)
+    """
+    now = datetime.utcnow()
+    
+    # --- 逻辑 A: 计算真实的 Occupancy (Allocation) ---
+    def get_real_occupancy(hours: int) -> float:
+        start_time = now - timedelta(hours=hours)
+        snapshots = db.query(models.ClusterSnapshot).filter(
+            models.ClusterSnapshot.timestamp >= start_time
+        ).all()
+        
+        if not snapshots: return 0.0
+        
+        total_cap = sum(s.total_gpus for s in snapshots)
+        total_used = sum(s.slurm_used_gpus for s in snapshots)
+        
+        return (total_used / total_cap) if total_cap > 0 else 0.0
+
+    # --- 逻辑 B: Mock 利用率 ---
+    # 模拟一个 30% ~ 60% 之间的随机负载
+    mock_util_24h = 0.45 + random.uniform(-0.05, 0.05)
+    mock_util_7d  = 0.38
+    
+    return {
+        "total_occupancy_24h": get_real_occupancy(24),
+        "total_occupancy_7d": get_real_occupancy(24 * 7),
+        
+        "magnus_utilization_24h": mock_util_24h,
+        "magnus_utilization_7d": mock_util_7d,
+    }
 
 
 # ================= Auth Routes =================

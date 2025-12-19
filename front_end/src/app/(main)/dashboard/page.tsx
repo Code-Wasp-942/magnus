@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Zap, RefreshCw, Box, SquareX, Plus, Loader2 } from "lucide-react"; 
+import { Zap, RefreshCw, Box, SquareX, Plus, Loader2, Activity, Cpu, Clock, CalendarDays } from "lucide-react"; 
 import { client } from "@/lib/api";
 import { Job } from "@/types/job";
 import { POLL_INTERVAL } from "@/lib/config";
@@ -17,39 +17,91 @@ import { useAuth } from "@/context/auth-context";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { ConfirmationDialog } from "@/components/ui/confirmation-dialog";
 
+interface DashboardStats {
+  total_occupancy_24h: number;
+  total_occupancy_7d: number;
+  magnus_utilization_24h: number;
+  magnus_utilization_7d: number;
+}
+
+function StatCard({ 
+  label, 
+  value, 
+  subLabel, 
+  icon: Icon, 
+  colorClass 
+}: { 
+  label: string; 
+  value: number | null; 
+  subLabel: string; 
+  icon: any; 
+  colorClass: string 
+}) {
+  return (
+    <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 flex items-start justify-between shadow-sm backdrop-blur-sm hover:border-zinc-700 transition-colors">
+      <div>
+        <p className="text-zinc-500 text-xs font-medium uppercase tracking-wider mb-1">{label}</p>
+        <div className="flex items-baseline gap-2">
+          {value === null ? (
+            <div className="h-8 w-16 bg-zinc-800 animate-pulse rounded my-1" />
+          ) : (
+            <h3 className="text-2xl font-bold text-zinc-100">{(value * 100).toFixed(1)}%</h3>
+          )}
+        </div>
+        <p className="text-zinc-500 text-xs mt-1">{subLabel}</p>
+      </div>
+      <div className={`p-2 rounded-lg ${colorClass} bg-opacity-10`}>
+        <Icon className={`w-5 h-5 ${colorClass.replace("bg-", "text-")}`} />
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const { user: currentUser } = useAuth();
+  
   const [activeJobs, setActiveJobs] = useState<Job[]>([]);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // --- Drawer State ---
+  // Drawer State
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [drawerMode, setDrawerMode] = useState<"create" | "clone">("create");
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [cloneData, setCloneData] = useState<JobFormData | null>(null);
 
-  // --- Terminate Dialog State ---
+  // Terminate Dialog State
   const [jobToTerminate, setJobToTerminate] = useState<Job | null>(null);
   const [isTerminating, setIsTerminating] = useState(false);
 
-  const fetchActiveJobs = useCallback(async (isBackground = false) => {
+  const fetchDashboardData = useCallback(async (isBackground = false) => {
     if (!isBackground) setLoading(true);
     try {
-      const data = await client("/api/dashboard/my-active-jobs");
-      setActiveJobs(data);
+      // Parallel fetch with error handling for stats to avoid blocking the main list
+      const [jobsData, statsData] = await Promise.all([
+        client("/api/dashboard/my-active-jobs"),
+        client("/api/dashboard/stats").catch(e => {
+            console.warn("Failed to fetch stats", e);
+            return null;
+        })
+      ]);
+      
+      setActiveJobs(jobsData);
+      if (statsData) setStats(statsData);
+
     } catch (e) {
-      console.error("Failed to fetch active jobs", e);
+      console.error("Failed to fetch dashboard data", e);
     } finally {
       if (!isBackground) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchActiveJobs();
-    const interval = setInterval(() => fetchActiveJobs(true), POLL_INTERVAL);
+    fetchDashboardData();
+    const interval = setInterval(() => fetchDashboardData(true), POLL_INTERVAL);
     return () => clearInterval(interval);
-  }, [fetchActiveJobs]);
+  }, [fetchDashboardData]);
 
   const handleNewJob = () => {
     setDrawerMode("create");
@@ -76,18 +128,16 @@ export default function DashboardPage() {
     setIsDrawerOpen(true);
   };
 
-  // Trigger Dialog
   const onClickTerminate = (job: Job) => {
     setJobToTerminate(job);
   };
 
-  // Execute Termination
   const executeTermination = async () => {
     if (!jobToTerminate) return;
     setIsTerminating(true);
     try {
         await client(`/api/jobs/${jobToTerminate.id}/terminate`, { method: "POST" });
-        fetchActiveJobs(); 
+        fetchDashboardData(true); 
         setJobToTerminate(null);
     } catch (e) {
         alert("Failed to terminate job");
@@ -100,7 +150,6 @@ export default function DashboardPage() {
   return (
     <div className="pb-20 relative min-h-[calc(100vh-8rem)]">
 
-      {/* 隐藏全局滚动条但保留滚动功能 */}
       <style jsx global>{`
         ::-webkit-scrollbar {
           display: none;
@@ -118,13 +167,44 @@ export default function DashboardPage() {
             </h1>
             <p className="text-zinc-500 text-sm mt-1">Welcome back, {currentUser?.name}. Here is your workload overview.</p>
         </div>
-        {/* Replace Quick Launch with New Job button */}
         <button 
           onClick={handleNewJob} 
           className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors shadow-lg shadow-blue-900/20 active:scale-95 border border-blue-500/50"
         >
           <Plus className="w-4 h-4" /> New Job
         </button>
+      </div>
+
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <StatCard 
+            label="Total Occupancy (24h)" 
+            value={stats?.total_occupancy_24h ?? null}
+            subLabel="All Slurm Tasks"
+            icon={Activity}
+            colorClass="bg-emerald-500 text-emerald-500"
+        />
+        <StatCard 
+            label="Total Occupancy (7d)" 
+            value={stats?.total_occupancy_7d ?? null}
+            subLabel="All Slurm Tasks"
+            icon={CalendarDays}
+            colorClass="bg-teal-500 text-teal-500"
+        />
+        <StatCard 
+            label="Magnus Utilization (24h)" 
+            value={0.0}
+            subLabel="Platform Managed（施工中）"
+            icon={Cpu}
+            colorClass="bg-blue-500 text-blue-500"
+        />
+        <StatCard 
+            label="Magnus Utilization (7d)" 
+            value={0.0}
+            subLabel="Platform Managed（施工中）"
+            icon={Clock}
+            colorClass="bg-indigo-500 text-indigo-500"
+        />
       </div>
 
       <div className="flex flex-col gap-6">
@@ -163,7 +243,7 @@ export default function DashboardPage() {
                         <tr 
                         key={job.id} 
                         onClick={() => router.push(`/jobs/${job.id}`)}
-                        className="hover:bg-zinc-800/40 transition-colors group"
+                        className="hover:bg-zinc-800/40 transition-colors group cursor-pointer"
                         >
                         <td className="px-6 py-4 align-top whitespace-normal break-all">
                             <div className="flex flex-col gap-1.5">
@@ -200,7 +280,6 @@ export default function DashboardPage() {
                                     <RefreshCw className="w-4 h-4" />
                                 </button>
                                 
-                                {/* 严谨校验：虽然接口返回的是 active jobs，前端依然防御性检查所有权 */}
                                 {currentUser?.id === job.user?.id && (
                                   <button 
                                       onClick={(e) => { 
@@ -229,14 +308,13 @@ export default function DashboardPage() {
         onClose={() => setIsDrawerOpen(false)}
         onSuccess={() => {
             setIsDrawerOpen(false);
-            fetchActiveJobs();
+            fetchDashboardData();
         }}
         mode={drawerMode}
         initialData={cloneData}
         formKey={drawerMode + (selectedJobId || "")}
       />
 
-      {/* --- Confirmation Dialog --- */}
       <ConfirmationDialog
         isOpen={!!jobToTerminate}
         onClose={() => setJobToTerminate(null)}

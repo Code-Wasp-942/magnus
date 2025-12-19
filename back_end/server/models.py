@@ -65,3 +65,12 @@ class Job(Base):
     slurm_job_id: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     start_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    
+    
+class ClusterSnapshot(Base):
+    __tablename__ = "cluster_snapshots"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    total_gpus: Mapped[int] = mapped_column(Integer)
+    slurm_used_gpus: Mapped[int] = mapped_column(Integer)
+    magnus_used_gpus: Mapped[int] = mapped_column(Integer)
