@@ -247,9 +247,6 @@ class MagnusScheduler:
         job_working_table = f"{magnus_workspace_path}/jobs/{job.id}"
         guarantee_file_exist(f"{job_working_table}/slurm", is_directory=True)
         
-        magnus_uv_cache = f"{magnus_config['server']['root']}/uv_cache"
-        guarantee_file_exist(magnus_uv_cache, is_directory=True)
-        
         acl_cmd = [
             "setfacl", "-R",
             "-m", f"u:{effective_runner}:rwx",
@@ -258,6 +255,17 @@ class MagnusScheduler:
             job_working_table
         ]
         subprocess.run(acl_cmd, check=True)
+        
+        magnus_uv_cache = f"{magnus_config['server']['root']}/uv_cache/{effective_runner}"
+        guarantee_file_exist(magnus_uv_cache, is_directory=True)
+
+        acl_cmd_cache = [
+            "setfacl",
+            "-m", f"u:{effective_runner}:rwx",
+            "-d", "-m", f"u:{effective_runner}:rwx",
+            magnus_uv_cache
+        ]
+        subprocess.run(acl_cmd_cache, check=True)
         
         # 定义成功信标路径
         success_marker_path = f"{job_working_table}/.magnus_success"
@@ -292,6 +300,14 @@ def main():
     repo_dir = os.path.join(work_dir, "repository")
     marker_path = {repr(success_marker_path)}
     
+    user_cmd_str = {repr(job.entry_command)}
+    if "sudo" in user_cmd_str:
+        raise RuntimeError("Error: Not privileged.")
+        
+    effective_runner = {repr(effective_runner)}
+    if effective_runner == "root":
+        raise RuntimeError("Error: Not privileged.")
+    
     # --- 阶段 1: 准备代码环境 ---
     # 保持 stdout 干净，除非出错才打印到 stderr
     try:
@@ -324,18 +340,14 @@ def main():
         # 切换到仓库根目录
         os.chdir(repo_dir)
         
-        # 拿到原始命令
-        user_cmd_str = {repr(job.entry_command)}
-        if "sudo" in user_cmd_str:
-            raise RuntimeError("Error: Not privileged.")
-        
         # 拿到环境配置 (由外部注入)
         conda_shell_script_path = {repr(conda_shell_script_path)}
         execution_conda_environment = {repr(execution_conda_environment)}
         
         # 构造组合拳命令：source 脚本 -> 激活环境 -> 执行用户命令
         full_command = " && ".join([
-            f"export HOME=/home/{effective_runner}",
+            "set -e",
+            f"export HOME=/home/{{effective_runner}}",
             f"source '{{conda_shell_script_path}}'",
             f"conda activate {{execution_conda_environment}}",
             "unset VIRTUAL_ENV",
