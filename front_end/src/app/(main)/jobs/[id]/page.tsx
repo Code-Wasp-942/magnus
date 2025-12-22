@@ -13,7 +13,7 @@ import { JobPriorityBadge } from "@/components/jobs/job-priority-badge";
 import { JobStatusBadge } from "@/components/jobs/job-status-badge";
 import RenderMarkdown from "@/components/ui/render-markdown";
 import { JobDrawer } from "@/components/jobs/job-drawer";
-import { JobFormData } from "@/components/jobs/job-form";
+import { useJobOperations } from "@/hooks/use-job-operations";
 
 export default function JobDetailsPage() {
   const params = useParams();
@@ -50,11 +50,10 @@ export default function JobDetailsPage() {
   const [activeTab, setActiveTab] = useState<'console' | 'description'>('console');
   const logEndRef = useRef<HTMLDivElement>(null);
 
-  // --- Clone State ---
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [cloneData, setCloneData] = useState<JobFormData | null>(null);
-  // 新增：用于强制刷新 Form 的 Key
-  const [cloneKey, setCloneKey] = useState(0);
+  // --- Hook 注入: 仅需处理 Clone 逻辑 ---
+  const { drawerProps, handleCloneJob } = useJobOperations({
+    onSuccess: () => router.push('/jobs') // Clone 成功后返回列表页
+  });
 
   // 1. 获取任务详情 (支持轮询)
   useEffect(() => {
@@ -92,28 +91,6 @@ export default function JobDetailsPage() {
     return () => clearInterval(interval);
   }, [jobId]);
 
-  const handleClone = () => {
-    if (!job) return;
-    setCloneData({
-        taskName: job.task_name, 
-        description: job.description || "",
-        namespace: job.namespace,
-        repoName: job.repo_name,
-        branch: job.branch,
-        commit_sha: job.commit_sha,
-        entry_command: job.entry_command,
-        gpu_count: job.gpu_count,
-        gpu_type: job.gpu_type,
-        job_type: job.job_type,
-        cpu_count: job.cpu_count,
-        memory_demand: job.memory_demand,
-        runner: job.runner,
-    });
-    // 强制 key 变化，触发 Form 重新挂载以读取 initialData
-    setCloneKey(prev => prev + 1);
-    setIsDrawerOpen(true);
-  };
-
   if (loading) {
     return <div className="flex items-center justify-center h-[50vh] text-zinc-500">Loading Job Context...</div>;
   }
@@ -129,6 +106,11 @@ export default function JobDetailsPage() {
 
   return (
     <div className="max-w-6xl mx-auto pb-20">
+      
+      <style jsx global>{`
+        ::-webkit-scrollbar { display: none; }
+        html { -ms-overflow-style: none; scrollbar-width: none; }
+      `}</style>
       
       {/* 顶部导航 */}
       <div className="mb-8">
@@ -190,10 +172,10 @@ export default function JobDetailsPage() {
                </div>
             )}
             
-            {/* Clone Button - 位于状态卡片右侧，通过 border 分隔 */}
+            {/* Clone Button - Modified to use Hook */}
             <div className="ml-4 pl-4 border-l border-zinc-700/50 h-full flex items-center">
                 <button
-                    onClick={handleClone}
+                    onClick={() => handleCloneJob(job)}
                     className="group flex items-center justify-center w-10 h-10 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700/50 hover:border-zinc-600 transition-all shadow-sm active:scale-95"
                     title="Clone this job"
                 >
@@ -206,10 +188,10 @@ export default function JobDetailsPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* 左侧：配置详情 - 使用 flex 布局对齐高度 */}
-        <div className="lg:col-span-1 flex flex-col gap-6 lg:h-[650px]">
+        {/* 左侧：配置详情 */}
+        <div className="lg:col-span-1 flex flex-col gap-6 lg:h-[700px]">
           
-          {/* 代码信息 (固定高度，不压缩) */}
+          {/* 代码信息 */}
           <div className="shrink-0 bg-zinc-900/30 border border-zinc-800 rounded-xl overflow-hidden">
             <div className="px-5 py-3 border-b border-zinc-800 bg-zinc-900/50 flex items-center gap-2">
               <GitBranch className="w-4 h-4 text-zinc-400" />
@@ -292,7 +274,7 @@ export default function JobDetailsPage() {
             </div>
           </div>
 
-          {/* 资源配置 (固定高度，不压缩) */}
+          {/* 资源配置 */}
           <div className="shrink-0 bg-zinc-900/30 border border-zinc-800 rounded-xl overflow-hidden">
             <div className="px-5 py-3 border-b border-zinc-800 bg-zinc-900/50 flex items-center gap-2">
               <Cpu className="w-4 h-4 text-zinc-400" />
@@ -302,7 +284,7 @@ export default function JobDetailsPage() {
               <div>
                 <label className="text-xs text-zinc-500 font-medium uppercase tracking-wider block mb-1.5">Accelerator</label>
                 <span className="text-base text-white font-medium block">
-                   {job.gpu_type === 'CPU' ? 'CPU Only' : job.gpu_type}
+                    {job.gpu_type === 'CPU' ? 'CPU Only' : job.gpu_type}
                 </span>
               </div>
               <div>
@@ -312,13 +294,13 @@ export default function JobDetailsPage() {
             </div>
           </div>
 
-           {/* 入口命令 (自动填充剩余空间，高度对齐) */}
+           {/* 入口命令 */}
            <div className="flex-1 min-h-0 flex flex-col bg-zinc-900/30 border border-zinc-800 rounded-xl overflow-hidden">
             <div className="shrink-0 px-5 py-3 border-b border-zinc-800 bg-zinc-900/50 flex items-center gap-2">
               <Terminal className="w-4 h-4 text-zinc-400" />
               <h3 className="text-sm font-semibold text-zinc-200">Entry Command</h3>
             </div>
-            {/* 内容区域：Flex填充 + 滚动 */}
+            {/* 内容区域 */}
             <div className="flex-1 overflow-auto p-4 bg-zinc-950 custom-scrollbar">
               <CopyableText 
                 text={job.entry_command} 
@@ -331,9 +313,9 @@ export default function JobDetailsPage() {
         </div>
 
         {/* 右侧：实时日志 & 描述 */}
-        <div className="lg:col-span-2 flex flex-col h-[650px] bg-[#0c0c0e] border border-zinc-800 rounded-xl overflow-hidden shadow-2xl">
+        <div className="lg:col-span-2 flex flex-col h-[700px] bg-[#0c0c0e] border border-zinc-800 rounded-xl overflow-hidden shadow-2xl">
           
-          {/* Tab Header - 纯文字，无按钮感 */}
+          {/* Tab Header */}
           <div className="px-5 py-3 border-b border-zinc-800 bg-zinc-900/50 flex items-center justify-between select-none">
             <div className="flex items-center gap-6">
               
@@ -345,7 +327,7 @@ export default function JobDetailsPage() {
               >
                 <Terminal className={`w-4 h-4 ${activeTab === 'console' ? 'text-zinc-400' : 'text-zinc-600'}`} />
                 <span>Console Output</span>
-                {/* 呼吸灯：只要是 Running 就显示，无论切到哪个 Tab */}
+                {/* 呼吸灯 */}
                 {job.status === 'Running' && (
                   <span className="flex h-1.5 w-1.5 relative ml-0.5">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
@@ -414,17 +396,7 @@ export default function JobDetailsPage() {
 
       </div>
 
-      <JobDrawer
-        isOpen={isDrawerOpen}
-        onClose={() => setIsDrawerOpen(false)}
-        onSuccess={() => {
-            setIsDrawerOpen(false);
-            router.push('/jobs');
-        }}
-        mode="clone"
-        initialData={cloneData}
-        formKey={`clone-${jobId}-${cloneKey}`} 
-      />
+      <JobDrawer {...drawerProps} />
     </div>
   );
 }
