@@ -129,7 +129,7 @@ export default function ClusterPage() {
               onClone={handleCloneJob}
               onTerminate={onClickTerminate}
               emptyMessage="No running jobs."
-              className="border-none -h-[175px]"
+              className="border-none min-h-[175px]"
             />
             
             {stats.total_running > 0 && (
