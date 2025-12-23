@@ -204,7 +204,7 @@ export default function BlueprintsPage() {
 
       {/* Table Area */}
       <div className="border border-zinc-800 rounded-xl bg-zinc-900/30 shadow-sm flex flex-col overflow-hidden min-h-[400px]">
-        <div className="overflow-x-auto w-full">
+        <div className="overflow-x-auto w-full min-h-[400px]">
           <table className="w-full text-left text-sm whitespace-nowrap table-fixed">
             <thead className="bg-zinc-900/90 text-zinc-500 border-b border-zinc-800 backdrop-blur-md">
               <tr>
