@@ -62,10 +62,10 @@ class BlueprintManager:
         for name, param in sig.parameters.items():
 
             schema = BlueprintParamSchema(
-                key=name,
-                label=name.replace("_", " ").title(),
-                type="text",
-                default=param.default if param.default != inspect.Parameter.empty else None
+                key = name,
+                label = name.replace("_", " ").title(),
+                type = "text",
+                default = param.default if param.default != inspect.Parameter.empty else None,
             )
 
             annotation = param.annotation

@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { 
   Play, X, Search, Loader2, Terminal, 
-  RefreshCw, Trash2, FileCode, DraftingCompass, Plus
+  RefreshCw, Trash2, FileCode, DraftingCompass
 } from "lucide-react";
 import { client } from "@/lib/api";
 import { cn, formatBeijingTime } from "@/lib/utils";
@@ -13,9 +13,10 @@ import { useAuth } from "@/context/auth-context";
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import { CopyableText } from "@/components/ui/copyable-text";
 import { UserAvatar } from "@/components/ui/user-avatar";
-import { NumberStepper } from "@/components/ui/number-stepper";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ConfirmationDialog } from "@/components/ui/confirmation-dialog";
+import { DynamicForm } from "@/components/ui/dynamic-form";
+import { FieldSchema } from "@/components/ui/dynamic-form/types";
 import { POLL_INTERVAL } from "@/lib/config";
 
 import Editor from "react-simple-code-editor";
@@ -23,19 +24,6 @@ import { highlight, languages } from "prismjs";
 import "prismjs/components/prism-clike";
 import "prismjs/components/prism-python";
 import "prismjs/themes/prism-okaidia.css";
-
-interface BlueprintParam {
-  key: string;
-  label: string;
-  type: "text" | "number" | "boolean" | "select";
-  default?: any;
-  options?: string[];
-  min?: number;
-  max?: number;
-  step?: number;
-  placeholder?: string;
-  description?: string;
-}
 
 interface Blueprint {
   id: string;
@@ -133,6 +121,7 @@ function BlueprintDrawer({ isOpen, mode, initialData, onClose, onSave, isSaving 
     const [formData, setFormData] = useState(initialData);
     const [errorField, setErrorField] = useState<string | null>(null);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
     const handleKeyDown = (e: React.KeyboardEvent) => {
         const target = e.currentTarget as HTMLTextAreaElement;
         const { value, selectionStart, selectionEnd } = target;
@@ -516,7 +505,10 @@ export default function BlueprintsPage() {
   const [totalItems, setTotalItems] = useState(0);
 
   const [selectedBlueprint, setSelectedBlueprint] = useState<Blueprint | null>(null);
-  const [paramsSchema, setParamsSchema] = useState<BlueprintParam[]>([]);
+  
+  // 使用新的 FieldSchema 类型
+  const [paramsSchema, setParamsSchema] = useState<FieldSchema[]>([]);
+  
   const [formValues, setFormValues] = useState<Record<string, any>>({});
   const [isRunning, setIsRunning] = useState(false);
   const [isLoadingSchema, setIsLoadingSchema] = useState(false);
@@ -591,10 +583,11 @@ export default function BlueprintsPage() {
     setIsLoadingSchema(true);
     setParamsSchema([]);
     try {
+      // 获取 schema (假设后端返回结构符合 FieldSchema)
       const schema = await client(`/api/blueprints/${bp.id}/schema`);
       setParamsSchema(schema);
       const initial: Record<string, any> = {};
-      schema.forEach((p: BlueprintParam) => { initial[p.key] = p.default ?? ""; });
+      schema.forEach((p: FieldSchema) => { initial[p.key] = p.default ?? ""; });
       setFormValues(initial);
     } catch (e) {
       alert("Failed to parse blueprint schema.");
@@ -792,86 +785,14 @@ export default function BlueprintsPage() {
               </button>
             </div>
             
-            <div className="p-6 space-y-5 overflow-y-auto custom-scrollbar">
-            {isLoadingSchema ? (
-                <div className="py-10 flex justify-center">
-                <Loader2 className="w-6 h-6 animate-spin text-zinc-600" />
-                </div>
-            ) : paramsSchema.length === 0 ? (
-                <div className="text-center text-zinc-500 py-4">No parameters required.</div>
-            ) : (
-                paramsSchema.map((param) => (
-                <div key={param.key} className="space-y-1.5">
-                    <label className="text-xs uppercase tracking-wider mb-1.5 block font-medium text-zinc-500">
-                    {param.label || param.key}
-                    </label>
-
-                    {/* 1. 数字类型 */}
-                    {param.type === "number" ? (
-                    <NumberStepper
-                        label=""
-                        value={Number(formValues[param.key])}
-                        onChange={(val) => setFormValues({ ...formValues, [param.key]: val })}
-                        min={param.min}
-                        max={param.max}
-                    />
-                    ) : param.type === "select" ? (
-                    /* 2. 下拉选择类型 */
-                    <div className="relative">
-                        <select
-                        value={formValues[param.key]}
-                        onChange={(e) =>
-                            setFormValues({ ...formValues, [param.key]: e.target.value })
-                        }
-                        className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2.5 text-sm text-zinc-200 focus:outline-none focus:border-blue-500 transition-all appearance-none"
-                        >
-                        {param.options?.map((opt) => (
-                            <option key={opt} value={opt}>
-                            {opt}
-                            </option>
-                        ))}
-                        </select>
-                        <div className="absolute right-3 top-3 pointer-events-none text-zinc-500">
-                        <Terminal className="w-4 h-4" />
-                        </div>
-                    </div>
-                    ) : param.type === "boolean" ? (
-                    /* 3. 布尔类型 */
-                    <select
-                        value={String(formValues[param.key])}
-                        onChange={(e) =>
-                        setFormValues({
-                            ...formValues,
-                            [param.key]: e.target.value === "true",
-                        })
-                        }
-                        className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2.5 text-sm text-zinc-200 focus:outline-none focus:border-blue-500 transition-all appearance-none"
-                    >
-                        <option value="true">True</option>
-                        <option value="false">False</option>
-                    </select>
-                    ) : (
-                    /* 4. 默认文本类型 */
-                    <input
-                        type="text"
-                        value={formValues[param.key]}
-                        onChange={(e) =>
-                        setFormValues({ ...formValues, [param.key]: e.target.value })
-                        }
-                        placeholder={param.placeholder}
-                        className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2.5 rounded-lg text-white text-sm focus:border-blue-500 outline-none transition-all placeholder-zinc-700"
-                    />
-                    )}
-
-                    {/* 描述信息 */}
-                    {param.description && (
-                    <p className="text-[11px] text-zinc-500 mt-1 ml-0.5">
-                        {param.description}
-                    </p>
-                    )}
-                </div>
-                ))
-            )}
+            {/* Dynamic Form Area */}
+            <div className="p-6 overflow-y-auto custom-scrollbar">
+              <DynamicForm 
+                schema={paramsSchema}
+                values={formValues}
+                onChange={(key, val) => setFormValues(prev => ({ ...prev, [key]: val }))}
+                isLoading={isLoadingSchema}
+              />
             </div>
 
             <div className="px-6 py-4 bg-zinc-900/50 border-t border-zinc-800 flex justify-end gap-3 flex-shrink-0">
