@@ -2,17 +2,28 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { LayoutDashboard, Rocket, Activity, Server, LogIn, LogOut, User as UserIcon, ScrollText } from "lucide-react";
-import { useAuth } from "@/context/auth-context"; 
 import Image from "next/image";
+import { usePathname } from "next/navigation";
+import { 
+  LayoutDashboard, 
+  Rocket, 
+  Activity, 
+  Server, 
+  LogIn, 
+  LogOut, 
+  ScrollText, 
+  Layers, 
+  Wrench 
+} from "lucide-react";
+import { useAuth } from "@/context/auth-context"; 
 
-// 顺序：Dashboard -> Jobs -> Cluster -> Blueprints
 const NAV_ITEMS = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { name: "Jobs", href: "/jobs", icon: Rocket },
   { name: "Cluster", href: "/cluster", icon: Activity },
+  { name: "Jobs", href: "/jobs", icon: Rocket },
   { name: "Blueprints", href: "/blueprints", icon: ScrollText },
+  { name: "Services", href: "/services", icon: Layers },
+  { name: "Tools", href: "/tools", icon: Wrench },
 ];
 
 export function Sidebar() {
@@ -21,43 +32,47 @@ export function Sidebar() {
 
   return (
     <aside className="w-64 h-screen fixed left-0 top-0 border-r border-zinc-800 bg-zinc-950/50 backdrop-blur-xl flex flex-col z-50">
+      
+      {/* Logo Header */}
       <div className="h-16 flex items-center justify-between px-8 border-b border-zinc-800 bg-zinc-900/20">
         <div className="font-bold text-xl tracking-tighter text-zinc-100 cursor-default select-none">
           Magnus<span className="text-blue-500">Platform</span>
         </div>
-        
-          <Image
-            src="/api/logo"
-            alt="Magnus Logo"
-            width={28}
-            height={28}
-            className="rounded-full object-cover border border-zinc-700/50 shadow-sm opacity-90 hover:opacity-100 transition-opacity"
-            unoptimized
-          />
+        <Image
+          src="/api/logo"
+          alt="Magnus Logo"
+          width={28}
+          height={28}
+          className="rounded-full object-cover border border-zinc-700/50 shadow-sm opacity-90 hover:opacity-100 transition-opacity"
+          unoptimized
+        />
       </div>
 
+      {/* Navigation Links */}
       <nav className="flex-1 py-6 px-3 space-y-1">
         {NAV_ITEMS.map((item) => {
-          // 简单的激活判断逻辑
           const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
           
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-sm font-medium group
-                ${isActive 
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-sm font-medium group ${
+                isActive 
                   ? "bg-blue-600/10 text-blue-400 border border-blue-600/10 shadow-[0_0_15px_rgba(37,99,235,0.1)]" 
                   : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100 border border-transparent"
-                }`}
+              }`}
             >
-              <item.icon className={`w-4 h-4 transition-colors ${isActive ? "text-blue-400" : "text-zinc-500 group-hover:text-zinc-300"}`} />
+              <item.icon className={`w-4 h-4 transition-colors ${
+                isActive ? "text-blue-400" : "text-zinc-500 group-hover:text-zinc-300"
+              }`} />
               {item.name}
             </Link>
           );
         })}
       </nav>
 
+      {/* Footer / User Profile */}
       <div className="border-t border-zinc-800 bg-zinc-900/20 p-3 flex flex-col gap-3">
         <div>
           {isLoading ? (
