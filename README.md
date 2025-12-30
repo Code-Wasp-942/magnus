@@ -66,7 +66,14 @@ Magnus-Platform/
 │   │   ├── database.py                                    # 数据库连接
 │   │   ├── main.py                                        # 应用入口
 │   │   ├── models.py                                      # 数据库模型
-│   │   ├── routers.py                                     # API 路由定义
+│   │   ├── routers/                                       # API 路由定义
+│   │   │   ├── __init__.py                                # API汇总
+│   │   │   ├── auth.py                                    # 鉴权API
+│   │   │   ├── blueprints.py                              # 蓝图API
+│   │   │   └── cluster.py                                 # 集群API
+│   │   │   ├── github.py                                  # github API
+│   │   │   ├── jobs.py                                    # 任务API
+│   │   │   └── services.py                                # 服务API
 │   │   └── schemas.py                                     # Pydantic 数据模型
 │   ├── library/                                           # 核心库模块
 │   │   ├── functional/                                    # 功能模块
