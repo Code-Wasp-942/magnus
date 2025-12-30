@@ -455,7 +455,7 @@ def main():
             "unset VIRTUAL_ENV",
             "export UV_CACHE_DIR={magnus_uv_cache}",
         ]
-        full_command = "\n".join(setup_commands) + f"\n\n{{user_cmd_str}}"
+        full_command = "\\n".join(setup_commands) + f"\\n\\n{{user_cmd_str}}"
 
         ret_code = subprocess.call(
             full_command,
