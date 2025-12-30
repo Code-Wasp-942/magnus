@@ -43,9 +43,15 @@ class ServiceManager:
                     continue
 
                 job = service.current_job
-                if not job:
+                
+                # 情况 1：Job 已经挂了/结束了，清理僵尸状态
+                if not job or job.status in [JobStatus.FAILED, JobStatus.TERMINATED, JobStatus.SUCCESS]:
+                    service.current_job_id = None
+                    service.assigned_port = None
+                    db.add(service)
                     continue
 
+                # 情况 2：Job 正在运行或等待，检查是否需要 Scale Down
                 if job.status in [JobStatus.PENDING, JobStatus.PAUSED]:
                     # Anti-Starvation
                     service.last_activity_time = now
@@ -58,11 +64,15 @@ class ServiceManager:
                     if idle_duration > idle_limit_seconds:
                         logger.info(f"Service {service.id} idle for {idle_duration:.0f}s. Scaling to zero.")
                         scheduler.terminate_job(db, job)
-                        # 注意：不置空 current_job_id，保持关联以便查看历史或状态
+                        
+                        # Scale Down 时立即解除关联
+                        service.current_job_id = None
+                        service.assigned_port = None
+                        db.add(service)
 
             db.commit()
 
-    def allocate_port(self, db: Session)-> int:
+    def allocate_port(self, db: Session) -> int:
         used_ports = set(
             db.query(Service.assigned_port)
             .filter(Service.assigned_port.is_not(None))
