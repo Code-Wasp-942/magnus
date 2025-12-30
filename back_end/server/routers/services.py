@@ -1,7 +1,8 @@
 # back_end/server/routers/services.py
+import httpx
 import logging
 import asyncio
-import httpx
+import traceback
 from typing import Optional, Dict, Any
 from datetime import datetime
 
@@ -186,7 +187,7 @@ async def proxy_service_request(
     except httpx.ConnectError:
         raise HTTPException(status_code=502, detail="Service process is running but port is unreachable. Application might be initializing.")
     except Exception as e:
-        logger.error(f"Proxy error for {service.id}: {e}")
+        logger.error(f"Proxy error for {service.id}: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
