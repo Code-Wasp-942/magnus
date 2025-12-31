@@ -1,28 +1,38 @@
 // front_end/src/components/services/service-table.tsx
 "use client";
 
-import { Loader2, Power, Activity, ExternalLink, Settings, Box } from "lucide-react";
+import { Loader2, Power, RefreshCw, Trash2, Box } from "lucide-react";
 import { Service } from "@/types/service";
 import { CopyableText } from "@/components/ui/copyable-text";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { JobStatusBadge } from "@/components/jobs/job-status-badge";
+import { formatBeijingTime } from "@/lib/utils";
+import { useAuth } from "@/context/auth-context";
 
 interface ServiceTableProps {
   services: Service[];
   loading: boolean;
-  onEdit: (service: Service) => void;
+  onClone: (service: Service) => void;
+  onToggle: (service: Service) => void;
+  onDelete: (service: Service) => void;
+  emptyMessage?: string;
   className?: string;
 }
 
 export function ServiceTable({
   services,
   loading,
-  onEdit,
-  className = "min-h-[400px]",
+  onClone,
+  onToggle,
+  onDelete,
+  emptyMessage = "No services found.",
+  className = "",
 }: ServiceTableProps) {
+  const { user: currentUser } = useAuth();
+
   if (loading) {
     return (
-      <div className={`border border-zinc-800 rounded-xl bg-zinc-900/30 shadow-sm flex flex-col items-center justify-center text-zinc-500 gap-3 ${className}`}>
+      <div className={`border border-zinc-800 rounded-xl bg-zinc-900/40 backdrop-blur-sm shadow-sm flex flex-col items-center justify-center text-zinc-500 gap-3 min-h-[400px] ${className}`}>
         <Loader2 className="w-8 h-8 animate-spin text-teal-500" />
         <p className="text-sm font-medium">Fetching services...</p>
       </div>
@@ -31,106 +41,140 @@ export function ServiceTable({
 
   if (services.length === 0) {
     return (
-      <div className={`border border-zinc-800 rounded-xl bg-zinc-900/30 shadow-sm flex flex-col items-center justify-center text-zinc-500 ${className}`}>
+      <div className={`border border-zinc-800 rounded-xl bg-zinc-900/40 backdrop-blur-sm shadow-sm flex flex-col items-center justify-center text-zinc-500 min-h-[400px] ${className}`}>
         <Box className="w-10 h-10 opacity-20 mb-3" />
-        <p className="text-base font-medium text-zinc-400">No services found</p>
+        <p className="text-base font-medium text-zinc-400">{emptyMessage}</p>
       </div>
     );
   }
 
   return (
-    <div className={`border border-zinc-800 rounded-xl bg-zinc-900/30 shadow-sm flex flex-col overflow-hidden ${className ? className.replace(/min-h-\[.*?\]/g, "") : ""}`}>
+    <div className={`border border-zinc-800 rounded-xl bg-zinc-900/40 backdrop-blur-sm shadow-sm flex flex-col overflow-hidden min-h-[400px] ${className}`}>
       <div className="overflow-x-auto w-full">
         <table className="w-full text-left text-sm whitespace-nowrap table-fixed">
           <thead className="bg-zinc-900/90 text-zinc-500 border-b border-zinc-800 backdrop-blur-md">
             <tr>
-              <th className="px-6 py-4 font-medium w-[25%]">Service Identity</th>
-              <th className="px-6 py-4 font-medium w-[15%] text-center">Status</th>
-              <th className="px-6 py-4 font-medium w-[25%] text-center">Proxy Endpoint</th>
-              <th className="px-6 py-4 font-medium w-[20%] text-center">Config / Resources</th>
+              <th className="px-6 py-4 font-medium w-[25%]">Service / Service ID</th>
+              <th className="px-6 py-4 font-medium w-[45%]">Description</th>
+              <th className="px-6 py-4 font-medium w-[15%] text-center">Job Status</th>
+              <th className="px-6 py-4 font-medium w-[15%] text-center">Creator / Updated at</th>
               <th className="px-6 py-4 font-medium text-right w-[15%]"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-800/50">
             {services.map((svc) => {
-              const proxyUrl = typeof window !== "undefined"
-                ? `${window.location.protocol}//${window.location.hostname}:${window.location.port || ""}/api/services/${svc.id}/`
-                : `/api/services/${svc.id}/`;
+              const isOwner = currentUser?.id === svc.owner_id;
+              
+              // [Fix] 补全 fallback 对象的 avatar_url 字段
+              const displayUser = svc.owner || { 
+                id: svc.owner_id, 
+                name: "Unknown", 
+                feishu_open_id: "", 
+                email: "",
+                avatar_url: null 
+              };
+
+              // 决定 Status 显示逻辑
+              let statusNode;
+              if (!svc.is_active) {
+                 statusNode = (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-zinc-800 text-zinc-500 border border-zinc-700">
+                      Inactive
+                    </span>
+                 );
+              } else if (svc.current_job) {
+                 statusNode = (
+                   <div className="scale-90">
+                     <JobStatusBadge status={svc.current_job.status} />
+                   </div>
+                 );
+              } else {
+                 statusNode = (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-teal-500/10 text-teal-400 border border-teal-500/20 animate-pulse">
+                      Idle (Scale 0)
+                    </span>
+                 );
+              }
 
               return (
-                <tr
-                  key={svc.id}
-                  className="hover:bg-zinc-800/40 transition-colors group border-b border-zinc-800/50 last:border-0"
-                >
-                  <td className="px-6 py-4 align-top">
+                <tr key={svc.id} className="hover:bg-zinc-800/40 transition-colors group border-b border-zinc-800/50 last:border-0">
+                  {/* Column 1: Service / ID */}
+                  <td className="px-6 py-4 align-top whitespace-normal break-all">
                     <div className="flex flex-col gap-1.5">
-                      <span className="font-semibold text-zinc-200 text-base">{svc.name}</span>
-                      <span className="text-xs text-zinc-500 font-mono tracking-wider">{svc.id}</span>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <UserAvatar user={svc.owner} subText={null} />
+                      <div className="flex items-center gap-2">
+                        <CopyableText text={svc.name} variant="text" className="font-semibold text-zinc-200 text-base" />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <CopyableText text={svc.id} className="text-[10px] tracking-wider" />
                       </div>
                     </div>
                   </td>
 
-                  <td className="px-6 py-4 align-top text-center">
-                    <div className="flex flex-col items-center gap-2">
-                      {svc.is_active ? (
-                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-teal-500/10 text-teal-400 text-xs font-medium border border-teal-500/20">
-                          <Activity className="w-3 h-3" /> Active
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-500 text-xs font-medium border border-zinc-700">
-                          <Power className="w-3 h-3" /> Inactive
-                        </span>
-                      )}
-                      {svc.current_job ? (
-                        <div className="scale-90 opacity-90">
-                          <JobStatusBadge status={svc.current_job.status} />
-                        </div>
-                      ) : (
-                        <span className="text-[10px] text-zinc-600 uppercase tracking-wider font-medium">
-                          Idle (Scale 0)
-                        </span>
-                      )}
+                  {/* Column 2: Description (支持换行) */}
+                  <td className="px-6 py-4 align-top whitespace-normal">
+                    <p className="text-zinc-400 text-sm leading-relaxed line-clamp-2 break-words">
+                      {svc.description || <span className="text-zinc-600 italic">No description provided.</span>}
+                    </p>
+                  </td>
+
+                  {/* Column 3: Job Status */}
+                  <td className="px-6 py-4 align-top">
+                    <div className="flex justify-center h-full pt-1">
+                      {statusNode}
                     </div>
                   </td>
 
-                  <td className="px-6 py-4 align-middle text-center">
-                    <div className="flex flex-col items-center gap-1.5">
-                      <div className="bg-zinc-950/50 border border-zinc-800/50 rounded px-2 py-1 max-w-full">
-                        <CopyableText
-                          text={proxyUrl}
-                          variant="id"
-                          className="max-w-[180px] truncate !text-zinc-400"
-                        />
-                      </div>
-                      <a
-                        href={proxyUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[10px] text-blue-400 hover:text-blue-300 flex items-center justify-center gap-1 transition-colors"
-                      >
-                        Open in new tab <ExternalLink className="w-2.5 h-2.5" />
-                      </a>
+                  {/* Column 4: Creator / Updated at */}
+                  <td className="px-6 py-4 align-top">
+                    <div className="flex justify-center">
+                      <UserAvatar 
+                        user={{
+                            ...displayUser,
+                            email: displayUser.email || undefined,
+                            avatar_url: displayUser.avatar_url || undefined
+                        }} 
+                        subText={formatBeijingTime(svc.updated_at)} 
+                      />
                     </div>
                   </td>
 
-                  <td className="px-6 py-4 align-top text-center">
-                    <div className="flex flex-col gap-1.5 text-xs text-zinc-400">
-                      <span className="font-mono bg-zinc-800/50 px-2 py-0.5 rounded border border-zinc-800 inline-block">
-                        {svc.gpu_type} × {svc.gpu_count}
-                      </span>
-                      <span className="text-zinc-500">Idle Timeout: {svc.idle_timeout}m</span>
-                    </div>
-                  </td>
-
+                  {/* Column 5: Actions */}
                   <td className="px-6 py-4 align-middle text-right">
-                    <button
-                      onClick={() => onEdit(svc)}
-                      className="p-2 bg-zinc-800 hover:bg-zinc-700 hover:text-white rounded-lg text-zinc-400 transition-colors border border-zinc-700/50 shadow-sm opacity-0 group-hover:opacity-100 transform translate-x-2 group-hover:translate-x-0 transition-all"
-                    >
-                      <Settings className="w-4 h-4" />
-                    </button>
+                    <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
+                      
+                      {/* Clone / Edit Button */}
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); onClone(svc); }} 
+                        className="p-2 bg-zinc-800 hover:bg-zinc-700 hover:text-white rounded-lg text-zinc-400 transition-colors border border-zinc-700/50 shadow-sm" 
+                        title="Clone / Edit"
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                      </button>
+
+                      {/* Toggle Button */}
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); onToggle(svc); }} 
+                        className={`p-2 rounded-lg transition-colors border shadow-sm ${
+                          svc.is_active 
+                            ? "bg-teal-900/20 hover:bg-teal-900/40 text-teal-400 border-teal-500/20" 
+                            : "bg-zinc-800 hover:bg-zinc-700 text-zinc-500 hover:text-zinc-300 border-zinc-700/50"
+                        }`}
+                        title={svc.is_active ? "Stop Service" : "Start Service"}
+                      >
+                        <Power className="w-4 h-4" />
+                      </button>
+
+                      {/* Delete Button (Only Owner) */}
+                      {isOwner && (
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); onDelete(svc); }} 
+                          className="p-2 bg-red-950/30 hover:bg-red-900/50 text-red-400 hover:text-red-300 rounded-lg transition-colors border border-red-900/30" 
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               );

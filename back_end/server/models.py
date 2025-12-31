@@ -139,3 +139,4 @@ class Service(Base):
     cpu_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     memory_demand: Mapped[str | None] = mapped_column(String, nullable=True)
     runner: Mapped[str | None] = mapped_column(String, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

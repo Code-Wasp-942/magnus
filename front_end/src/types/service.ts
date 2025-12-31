@@ -8,6 +8,7 @@ export interface Service {
   description?: string;
   is_active: boolean;
   last_activity_time: string;
+  updated_at: string;
   current_job_id?: string;
   assigned_port?: number;
   current_job?: Job;

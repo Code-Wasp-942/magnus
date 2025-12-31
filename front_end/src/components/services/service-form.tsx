@@ -2,10 +2,10 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { ChevronDown, ChevronRight, Info, Layers } from "lucide-react";
+import { ChevronDown, ChevronRight, Layers } from "lucide-react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { NumberStepper } from "@/components/ui/number-stepper";
-import { client } from "@/lib/api"; 
+import { client } from "@/lib/api";
 import { Service } from "@/types/service";
 
 const MAX_GPU_COUNT = 3;
@@ -107,7 +107,7 @@ export default function ServiceForm({ initialData, onCancel, onSuccess }: Servic
   const jobDescriptionRef = useRef<HTMLTextAreaElement>(null);
   const commandRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-resize for Job Description (Multi-line allowed)
+  // Auto-resize for Job Description
   useEffect(() => {
     if (jobDescriptionRef.current) {
       jobDescriptionRef.current.style.height = 'auto';
@@ -123,7 +123,7 @@ export default function ServiceForm({ initialData, onCancel, onSuccess }: Servic
     }
   }, [command]);
 
-  // Sync Service Name -> Job Task Name (Convenience)
+  // Sync Service Name -> Job Task Name
   const handleServiceNameChange = (val: string) => {
     setName(val);
     clearError('name');
@@ -174,9 +174,10 @@ export default function ServiceForm({ initialData, onCancel, onSuccess }: Servic
     setErrorField(null); setErrorMessage(null);
 
     // Validations
-    if (!serviceId.trim()) { setErrorField("serviceId"); setErrorMessage("⚠️ ID is required"); scrollToError("field-serviceId"); return; }
-    if (!/^[a-z0-9-]+$/.test(serviceId)) { setErrorField("serviceId"); setErrorMessage("⚠️ ID must be lowercase slug"); scrollToError("field-serviceId"); return; }
-    if (!name.trim()) { setErrorField("name"); setErrorMessage("⚠️ Name is required"); scrollToError("field-name"); return; }
+    if (!name.trim()) { setErrorField("name"); setErrorMessage("⚠️ Service Name is required"); scrollToError("field-name"); return; }
+    if (!serviceId.trim()) { setErrorField("serviceId"); setErrorMessage("⚠️ Service ID is required"); scrollToError("field-serviceId"); return; }
+    if (!/^[a-z0-9-]+$/.test(serviceId)) { setErrorField("serviceId"); setErrorMessage("⚠️ Service ID must be lowercase slug"); scrollToError("field-serviceId"); return; }
+    if (!description?.trim()) { setErrorField("description"); setErrorMessage("⚠️ Description is required"); scrollToError("field-description"); return; }
     
     // Job Metadata Validations
     if (!jobTaskName.trim()) { setErrorField("jobTaskName"); setErrorMessage("⚠️ Job Task Name is required"); scrollToError("field-jobTaskName"); return; }
@@ -203,7 +204,7 @@ export default function ServiceForm({ initialData, onCancel, onSuccess }: Servic
       entry_command: command,
       
       job_task_name: jobTaskName,
-      job_description: jobDescription, // Allow empty if user wants
+      job_description: jobDescription, 
 
       gpu_count: gpuCount,
       gpu_type: gpuType,
@@ -214,15 +215,26 @@ export default function ServiceForm({ initialData, onCancel, onSuccess }: Servic
     };
     
     try {
-      await client("/api/services", { json: payload });
+      // [Magnus Update] Unified POST request (Upsert logic handled by backend)
+      await client("/api/services", { 
+          method: "POST",
+          json: payload 
+      });
       onSuccess(); 
     } catch (e: any) {
       setErrorMessage(e.message || "Save Failed");
-      alert(`❌ Error: ${e.message}`);
+      // 简单的 shake 效果反馈
+      const id = isOriginalId ? "btn-update" : "btn-create";
+      const btn = document.getElementById(id);
+      if (btn) {
+         btn.classList.add("animate-shake");
+         setTimeout(() => btn.classList.remove("animate-shake"), 500);
+      }
     }
   };
 
-  const isEdit = !!initialData;
+  // Determine if we are strictly updating the same resource (for UI feedback only)
+  const isOriginalId = initialData && initialData.id === serviceId;
 
   const inputClass = (isError: boolean) => `
     w-full bg-zinc-950 border px-3 py-2.5 rounded-lg text-white text-sm focus:border-blue-500 outline-none transition-all placeholder-zinc-700
@@ -239,22 +251,9 @@ export default function ServiceForm({ initialData, onCancel, onSuccess }: Servic
             <div className="h-px bg-zinc-800 flex-grow ml-2"></div>
         </h3>
         
-        <div className="mb-4" id="field-serviceId">
-            <label className={`text-xs uppercase tracking-wider mb-1.5 block font-medium ${errorField === 'serviceId' ? 'text-red-500' : 'text-zinc-500'}`}>
-                Service ID (Unique Slug) <span className="text-red-500">*</span>
-            </label>
-            <input 
-                className={`${inputClass(errorField === 'serviceId')} font-mono`}
-                value={serviceId} 
-                disabled={isEdit} 
-                placeholder="e.g. jupyter-lab-01"
-                onChange={e => { setServiceId(e.target.value); clearError('serviceId'); }} 
-            />
-        </div>
-
         <div className="mb-4" id="field-name">
             <label className={`text-xs uppercase tracking-wider mb-1.5 block font-medium ${errorField === 'name' ? 'text-red-500' : 'text-zinc-500'}`}>
-                Display Name <span className="text-red-500">*</span>
+                SERVICE NAME <span className="text-red-500">*</span>
             </label>
             <input 
                 className={inputClass(errorField === 'name')}
@@ -264,16 +263,28 @@ export default function ServiceForm({ initialData, onCancel, onSuccess }: Servic
             />
         </div>
 
-        <div className="mb-4">
-          <label className="text-xs uppercase tracking-wider mb-1.5 block font-medium text-zinc-500">
-            Description
+        <div className="mb-4" id="field-serviceId">
+            <label className={`text-xs uppercase tracking-wider mb-1.5 block font-medium ${errorField === 'serviceId' ? 'text-red-500' : 'text-zinc-500'}`}>
+                SERVICE ID <span className="text-red-500">*</span>
+            </label>
+            <input 
+                className={`${inputClass(errorField === 'serviceId')} font-mono`}
+                value={serviceId} 
+                placeholder="e.g. jupyter-lab-01"
+                onChange={e => { setServiceId(e.target.value); clearError('serviceId'); }} 
+            />
+            <p className="text-[10px] text-zinc-600 mt-1">Unique identifier (URL safe).</p>
+        </div>
+
+        <div className="mb-4" id="field-description">
+          <label className={`text-xs uppercase tracking-wider mb-1.5 block font-medium ${errorField === 'description' ? 'text-red-500' : 'text-zinc-500'}`}>
+            DESCRIPTION <span className="text-red-500">*</span>
           </label>
-          {/* 单行 Input，严禁换行 */}
           <input 
-            className={inputClass(false)}
+            className={inputClass(errorField === 'description')}
             value={description || ""} 
             placeholder="Service description (Single line)"
-            onChange={e => setDescription(e.target.value)} 
+            onChange={e => { setDescription(e.target.value); clearError('description'); }} 
           />
         </div>
       </div>
@@ -285,7 +296,6 @@ export default function ServiceForm({ initialData, onCancel, onSuccess }: Servic
             <div className="h-px bg-zinc-800 flex-grow ml-2"></div>
          </h3>
          
-         {/* 这里的 Grid 保持 3 列是因为它们都是小控件，且逻辑相关 */}
          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
                  <NumberStepper 
@@ -320,7 +330,7 @@ export default function ServiceForm({ initialData, onCancel, onSuccess }: Servic
          </div>
       </div>
 
-      {/* 3. Job Identity (Underlying) - Aligned with Job Form */}
+      {/* 3. Job Identity (Underlying) */}
       <div>
         <h3 className="text-zinc-200 text-sm font-semibold mb-4 flex items-center gap-2">
             <Layers className="w-4 h-4 text-zinc-500" />
@@ -344,7 +354,6 @@ export default function ServiceForm({ initialData, onCancel, onSuccess }: Servic
             <label className="text-xs uppercase tracking-wider mb-1.5 block font-medium text-zinc-500">
                 Job Description <span className="text-zinc-600 normal-case ml-1">(Optional)</span>
             </label>
-            {/* 多行 Textarea，允许换行，与 Job Form 一致 */}
             <textarea 
                 ref={jobDescriptionRef}
                 className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2.5 rounded-lg text-white text-sm focus:border-blue-500/50 focus:shadow-[0_0_15px_rgba(59,130,246,0.1)] outline-none transition-all placeholder-zinc-700 resize-none overflow-hidden min-h-[42px]"
@@ -356,7 +365,7 @@ export default function ServiceForm({ initialData, onCancel, onSuccess }: Servic
         </div>
       </div>
 
-      {/* 4. Code Source - Aligned with Job Form */}
+      {/* 4. Code Source */}
       <div>
         <h3 className="text-zinc-200 text-sm font-semibold mb-4 flex items-center gap-2">
             Code Source
@@ -402,7 +411,7 @@ export default function ServiceForm({ initialData, onCancel, onSuccess }: Servic
         </div>
       </div>
 
-      {/* 5. Resources - Aligned with Job Form */}
+      {/* 5. Resources */}
       <div>
          <h3 className="text-zinc-200 text-sm font-semibold mb-4 flex items-center gap-2">
             Compute Resources
@@ -462,7 +471,7 @@ export default function ServiceForm({ initialData, onCancel, onSuccess }: Servic
         </div>
       </div>
 
-      {/* 6. Execution - Aligned with Job Form */}
+      {/* 6. Execution */}
       <div id="field-command">
         <h3 className="text-zinc-200 text-sm font-semibold mb-4 flex items-center gap-2">
             Execution
@@ -498,10 +507,12 @@ export default function ServiceForm({ initialData, onCancel, onSuccess }: Servic
                 Cancel
             </button>
             <button 
+                id={isOriginalId ? "btn-update" : "btn-create"}
                 onClick={handleSave} 
                 className="flex-1 sm:flex-none px-6 py-2.5 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-900/20 active:scale-95 transition-all flex items-center justify-center gap-2"
             >
-                {isEdit ? "📡 Update Service" : "📡 Create Service"}
+                {/* 按钮文字依然可以保留逻辑区分，提升体验 */}
+                {isOriginalId ? "📡 Update Service" : (initialData ? "📡 Clone Service" : "📡 Create Service")}
             </button>
         </div>
       </div>

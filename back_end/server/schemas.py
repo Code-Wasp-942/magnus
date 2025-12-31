@@ -186,6 +186,7 @@ class ServiceResponse(ServiceCreate):
     assigned_port: Optional[int] = None
     current_job: Optional[JobResponse] = None
     owner: Optional[UserInfo] = None
+    updated_at: datetime
     class Config: from_attributes = True
     
     

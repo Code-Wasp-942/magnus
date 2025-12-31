@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Search, Plus } from "lucide-react";
+import { Search, Plus, Activity, ArrowUpDown } from "lucide-react";
 import { client } from "@/lib/api";
 import { POLL_INTERVAL } from "@/lib/config";
 import { Service } from "@/types/service";
@@ -11,15 +11,26 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import { ServiceTable } from "@/components/services/service-table";
 import { ServiceDrawer } from "@/components/services/service-drawer";
+import { ConfirmationDialog } from "@/components/ui/confirmation-dialog";
+
+// 排序选项配置
+const SORT_OPTIONS = [
+  { label: "Sort: Last Active", value: "activity", meta: "Traffic" },
+  { label: "Sort: Updated", value: "updated", meta: "Config" },
+];
 
 export default function ServicesPage() {
   const [services, setServices] = useState<Service[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Filters & Sorting
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [selectedUserId, setSelectedUserId] = useState("");
+  // [Magnus Update] 新增筛选和排序状态
+  const [activeOnly, setActiveOnly] = useState(false);
+  const [sortBy, setSortBy] = useState<string>("activity");
 
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -28,6 +39,14 @@ export default function ServicesPage() {
   // Drawer State
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [editingService, setEditingService] = useState<Service | null>(null);
+
+  // Confirmation Dialog State
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [pendingAction, setPendingAction] = useState<{
+    type: "delete" | "toggle";
+    service: Service;
+  } | null>(null);
 
   const skip = (currentPage - 1) * pageSize;
 
@@ -41,6 +60,10 @@ export default function ServicesPage() {
       });
       if (debouncedQuery.trim()) params.append("search", debouncedQuery.trim());
       if (selectedUserId) params.append("owner_id", selectedUserId);
+      
+      // [Magnus Update] 传递新的筛选参数
+      if (activeOnly) params.append("active_only", "true");
+      params.append("sort_by", sortBy);
 
       const data = await client(`/api/services?${params.toString()}`);
       setServices(data.items);
@@ -50,7 +73,7 @@ export default function ServicesPage() {
     } finally {
       if (!isBackground) setLoading(false);
     }
-  }, [skip, pageSize, debouncedQuery, selectedUserId]);
+  }, [skip, pageSize, debouncedQuery, selectedUserId, activeOnly, sortBy]);
 
   // 2. Fetch Users
   useEffect(() => {
@@ -83,9 +106,10 @@ export default function ServicesPage() {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
+  // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedQuery, selectedUserId]);
+  }, [debouncedQuery, selectedUserId, activeOnly, sortBy]);
 
   useEffect(() => {
     fetchServices();
@@ -99,15 +123,100 @@ export default function ServicesPage() {
     setIsDrawerOpen(true);
   };
 
-  const handleEdit = (svc: Service) => {
+  const handleClone = (svc: Service) => {
     setEditingService(svc);
     setIsDrawerOpen(true);
   };
 
-  const handleSuccess = () => {
+  const handleDrawerSuccess = () => {
     setIsDrawerOpen(false);
     fetchServices();
   };
+
+  const handleToggleClick = (svc: Service) => {
+    setPendingAction({ type: "toggle", service: svc });
+    setConfirmOpen(true);
+  };
+
+  const handleDeleteClick = (svc: Service) => {
+    setPendingAction({ type: "delete", service: svc });
+    setConfirmOpen(true);
+  };
+
+  const handleConfirmAction = async () => {
+    if (!pendingAction) return;
+    
+    setActionLoading(true);
+    try {
+      if (pendingAction.type === "delete") {
+        await client(`/api/services/${pendingAction.service.id}`, {
+          method: "DELETE",
+        });
+      } else if (pendingAction.type === "toggle") {
+        // Unified Upsert/Update via POST for toggling logic if needed, 
+        // OR patch if backend supports it. Assuming current backend logic:
+        // Ideally backend should have a specific endpoint for toggling or we update via POST.
+        // Based on previous context, we use the standard update endpoint or dedicated logic.
+        // Assuming we just update the `is_active` status.
+        // Note: Our latest backend code handles full object update on POST. 
+        // For atomic toggle, a lightweight PATCH is better, but strictly following the POST Upsert logic:
+        const updatedService = {
+            ...pendingAction.service,
+            is_active: !pendingAction.service.is_active
+        };
+        await client("/api/services", {
+          method: "POST", 
+          json: updatedService,
+        });
+      }
+      fetchServices(true); 
+      setConfirmOpen(false);
+      setPendingAction(null);
+    } catch (e) {
+      console.error(`Failed to ${pendingAction.type} service`, e);
+      alert(`Operation failed: ${e}`);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const getDialogConfig = () => {
+    if (!pendingAction) return { title: "", description: "", variant: "default" as const, confirmText: "" };
+    
+    if (pendingAction.type === "delete") {
+      return {
+        title: "Delete Service",
+        description: (
+          <span>
+            Are you sure you want to delete service <strong className="text-white">{pendingAction.service.name}</strong>? 
+            This action cannot be undone and will terminate any running instances.
+          </span>
+        ),
+        variant: "danger" as const,
+        confirmText: "Delete Service",
+      };
+    } else {
+      const isStopping = pendingAction.service.is_active;
+      return {
+        title: isStopping ? "Stop Service" : "Start Service",
+        description: isStopping ? (
+          <span>
+            Are you sure you want to stop <strong className="text-white">{pendingAction.service.name}</strong>? 
+            The proxy endpoint will stop accepting traffic.
+          </span>
+        ) : (
+          <span>
+            Are you sure you want to activate <strong className="text-white">{pendingAction.service.name}</strong>? 
+            This will enable traffic routing and scale up resources on demand.
+          </span>
+        ),
+        variant: isStopping ? "danger" as const : "default" as const,
+        confirmText: isStopping ? "Stop Service" : "Start Service",
+      };
+    }
+  };
+
+  const dialogConfig = getDialogConfig();
 
   return (
     <div className="relative min-h-[calc(100vh-8rem)] pb-20">
@@ -139,8 +248,10 @@ export default function ServicesPage() {
         </button>
       </div>
 
-      {/* Filters & Search */}
+      {/* Filters & Search & Sort */}
       <div className="bg-zinc-900/40 border border-zinc-800 rounded-xl p-1.5 mb-6 flex items-center gap-2 backdrop-blur-sm relative z-20">
+        
+        {/* 1. Search (Expanded) */}
         <div className="relative flex-1 group">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 group-focus-within:text-blue-500 transition-colors" />
           <input
@@ -151,8 +262,11 @@ export default function ServicesPage() {
             className="w-full bg-transparent border-none py-2.5 pl-9 pr-4 text-sm text-zinc-200 focus:outline-none focus:ring-0 placeholder-zinc-600"
           />
         </div>
+
         <div className="h-6 w-px bg-zinc-800"></div>
-        <div className="w-56">
+
+        {/* 2. User Filter */}
+        <div className="w-48">
           <SearchableSelect
             value={selectedUserId}
             onChange={setSelectedUserId}
@@ -161,13 +275,46 @@ export default function ServicesPage() {
             className="mb-0 border-none bg-transparent"
           />
         </div>
+
+        <div className="h-6 w-px bg-zinc-800"></div>
+
+        {/* 3. Sort Order [Magnus Update] */}
+        <div className="w-44">
+           <SearchableSelect
+             value={sortBy}
+             onChange={setSortBy}
+             options={SORT_OPTIONS}
+             className="mb-0 border-none bg-transparent"
+             // 这里的 icon 是字符串url，我们这里没有图标，所以仅依赖文字
+           />
+        </div>
+
+        <div className="h-6 w-px bg-zinc-800"></div>
+
+        {/* 4. Active Only Toggle [Magnus Update] */}
+        <button
+          onClick={() => setActiveOnly(!activeOnly)}
+          className={`px-3 py-2.5 text-sm font-medium flex items-center gap-2 transition-colors rounded-lg mr-1
+            ${activeOnly 
+              ? "text-teal-400 bg-teal-900/20 hover:bg-teal-900/30" 
+              : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+            }`}
+          title="Show active services only"
+        >
+          <Activity className={`w-4 h-4 ${activeOnly ? "animate-pulse" : ""}`} />
+          <span className="whitespace-nowrap">Active Only</span>
+        </button>
+
       </div>
 
+      {/* Table Content */}
       <div className="bg-zinc-900/40 border border-zinc-800 rounded-xl overflow-hidden backdrop-blur-sm">
         <ServiceTable
           services={services}
           loading={loading}
-          onEdit={handleEdit}
+          onClone={handleClone}
+          onToggle={handleToggleClick}
+          onDelete={handleDeleteClick}
         />
         {services.length > 0 && (
           <div className="px-6 py-2 border-zinc-900/30">
@@ -190,7 +337,18 @@ export default function ServicesPage() {
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
         initialData={editingService}
-        onSuccess={handleSuccess}
+        onSuccess={handleDrawerSuccess}
+      />
+
+      <ConfirmationDialog
+        isOpen={confirmOpen}
+        onClose={() => !actionLoading && setConfirmOpen(false)}
+        onConfirm={handleConfirmAction}
+        title={dialogConfig.title}
+        description={dialogConfig.description}
+        confirmText={dialogConfig.confirmText}
+        variant={dialogConfig.variant}
+        isLoading={actionLoading}
       />
     </div>
   );
