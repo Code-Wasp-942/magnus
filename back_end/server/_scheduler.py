@@ -118,7 +118,6 @@ class MagnusScheduler:
                 continue
             
             # 收割利用率数据入库
-            # 这里有一个不同频的问题，强迫症难受，但问题不大，冲 MVP 先不管了
             self._harvest_job_metrics(db, job)
 
             # 询问 SLURM 真实状态
@@ -126,13 +125,37 @@ class MagnusScheduler:
             
             # 🔍 核心修改：基于信标的双重验证
             if real_status == "COMPLETED":
-                # 构造信标路径 (Magnus 业务逻辑)
+                # 1. 验证成功信标 (Control Flow)
                 marker_path = f"{magnus_workspace_path}/jobs/{job.id}/.magnus_success"
                 
                 if os.path.exists(marker_path):
                     # 信标存在 -> 真正的成功
                     logger.info(f"Job {job.id} completed successfully (Marker Verified).")
                     job.status = JobStatus.SUCCESS
+
+                    # 2. 尝试获取结果 (Data Flow) [Magnus Update]
+                    result_path = f"{magnus_workspace_path}/jobs/{job.id}/.magnus_result"
+                    if os.path.exists(result_path):
+                        try:
+                            # 限制读取 64KB，防止撑爆 DB
+                            with open(result_path, "r", encoding="utf-8") as f:
+                                content = f.read(65536).strip()
+                            
+                            if content:
+                                job.result = content
+                                logger.info(f"Job {job.id} captured result ({len(content)} bytes).")
+                                log_path = f"{magnus_workspace_path}/jobs/{job.id}/slurm/output.txt"
+                                try:
+                                    with open(log_path, "a", encoding="utf-8") as log_f:
+                                        log_f.write(f"\n\n{'='*20} MAGNUS RESULT {'='*20}\n")
+                                        log_f.write(content)
+                                        log_f.write(f"\n{'='*55}\n")
+                                except Exception as e:
+                                    logger.warning(f"Failed to append result to log for Job {job.id}: {e}")
+                        except Exception as e:
+                            # 读取结果失败不应影响任务本身的 Success 状态，仅记录警告
+                            logger.warning(f"Failed to read result for Job {job.id}: {e}")
+
                 else:
                     # 信标不存在 -> 任务消失但未打卡 -> 视为失败 (scancel/crash)
                     logger.warning(f"Job {job.id} disappeared from queue but NO success marker found. Marking FAILED.")
@@ -151,10 +174,10 @@ class MagnusScheduler:
             # 如果是 PENDING/RUNNING，保持不变，信任 SLURM
             
             db.commit()
-            
+    
     
     def _harvest_job_metrics(
-        self, 
+        self,
         db: Session,
         job: Job,
     )-> None:
@@ -325,9 +348,15 @@ class MagnusScheduler:
                 )
             
             success_marker_path = f"{job_working_table}/.magnus_success"
+            result_marker_path = f"{job_working_table}/.magnus_result"
             if os.path.exists(success_marker_path):
                 try:
                     os.remove(success_marker_path)
+                except OSError:
+                    pass
+            if os.path.exists(result_marker_path):
+                try:
+                    os.remove(result_marker_path)
                 except OSError:
                     pass
             
@@ -336,7 +365,7 @@ class MagnusScheduler:
             spy_gpu_interval = magnus_config["server"]["scheduler"]["spy_gpu_interval"]
             conda_shell_script_path = magnus_config["server"]["scheduler"]["conda_shell_script_path"]
             execution_conda_environment = magnus_config["server"]["scheduler"]["execution_conda_environment"]
-            
+        
         except Exception as error:
             logger.error(f"Job {job.id} submission error: {error}\nTraceback:\n{traceback.format_exc()}")
             job.status = JobStatus.FAILED
@@ -396,7 +425,8 @@ def main():
     
     work_dir = {repr(job_working_table)}
     repo_dir = os.path.join(work_dir, "repository")
-    marker_path = {repr(success_marker_path)}
+    success_marker_path = {repr(success_marker_path)}
+    result_marker_path = {repr(result_marker_path)}
     gpu_status_path = {repr(gpu_status_path)}
     
     user_cmd_str = {repr(job.entry_command)}
@@ -455,7 +485,16 @@ def main():
             "unset VIRTUAL_ENV",
             "export UV_CACHE_DIR={magnus_uv_cache}",
         ]
-        full_command = "\\n".join(setup_commands) + f"\\n\\n{{user_cmd_str}}"
+        # 无论是否有结果，只要执行到这里，就写入 .magnus_success
+        # 如果 MAGNUS_RESULT 存在且非空，写入 .magnus_result
+        epilogue_command = f\"\"\"
+if [ ! -z "$MAGNUS_RESULT" ]; then
+    echo -n "$MAGNUS_RESULT" > {{result_marker_path}}
+fi
+echo -n "success" > {{success_marker_path}}
+\"\"\"
+
+        full_command = "\\n".join(setup_commands) + f"\\n\\n{{user_cmd_str}}\\n" + epilogue_command
 
         ret_code = subprocess.call(
             full_command,
@@ -463,17 +502,11 @@ def main():
             executable = "/bin/bash",
         )
         
-        if ret_code == 0:
-            with open(marker_path, "w") as f:
-                f.write("success")
-            sys.exit(0)
-        else:
-            sys.exit(ret_code)
+        sys.exit(ret_code)
     
     except Exception as error:
         print(f"Magnus Execution Error: {{error}}\\nTraceback: \\n{{traceback.format_exc()}}", file=sys.stderr)
         sys.exit(1)
-
 
 if __name__ == "__main__":
 
@@ -588,6 +621,7 @@ if __name__ == "__main__":
             delete_file(os.path.join(job_working_table, "repository"))
             delete_file(os.path.join(job_working_table, "wrapper.py"))
             delete_file(os.path.join(job_working_table, ".magnus_success"))
+            delete_file(os.path.join(job_working_table, ".magnus_result"))
         except Exception as error:
             logger.warning(
                 f"Clean up working table of job {job_id} failed:\n{error}\n"

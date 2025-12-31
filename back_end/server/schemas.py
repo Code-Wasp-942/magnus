@@ -62,6 +62,7 @@ class JobResponse(JobSubmission):
     cpu_count: Optional[int] = None
     memory_demand: Optional[str] = None
     runner: Optional[str] = None
+    result: Optional[str] = None
     class Config: from_attributes = True
     
     

@@ -75,6 +75,7 @@ class Job(Base):
     runner: Mapped[str | None] = mapped_column(String, nullable=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     start_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    result: Mapped[str | None] = mapped_column(Text, nullable=True)
     metrics: Mapped[list["JobMetric"]] = relationship(
         back_populates="job", 
         cascade="all, delete-orphan",
