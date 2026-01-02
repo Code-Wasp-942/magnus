@@ -2,9 +2,13 @@
 # Magnus - PKU-PHY 计算基础设施平台
 
 ![Magnus Logo](https://img.shields.io/badge/Magnus-Platform-blue)
-![Python](https://img.shields.io/badge/Python-3.14+-green)
 ![Next.js](https://img.shields.io/badge/Next.js-14-black)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-3178c6)
+![Python](https://img.shields.io/badge/Python-3.14+-green)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-teal)
+![PyTorch](https://img.shields.io/badge/PyTorch-2.9+-ee4c2c)
+![SLURM](https://img.shields.io/badge/Scheduler-SLURM-bf202f)
+
 
 **Magnus** 是 PKU-PHY 的科学计算与机器学习计算基础设施，集成了智能调度、资源监控、用户认证等企业级功能。
 
