@@ -61,7 +61,8 @@ class ServiceManager:
                     idle_duration = (now - service.last_activity_time).total_seconds()
                     idle_limit_seconds = service.idle_timeout * 60
 
-                    if idle_duration > idle_limit_seconds:
+                    # 约定 idle_timeout=0 表示永不 Scale Down
+                    if service.idle_timeout and (idle_duration > idle_limit_seconds):
                         logger.info(f"Service {service.id} idle for {idle_duration:.0f}s. Scaling to zero.")
                         scheduler.terminate_job(db, job)
                         

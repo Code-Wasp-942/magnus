@@ -303,7 +303,7 @@ export default function ServiceForm({ initialData, onCancel, onSuccess }: Servic
                    value={idleTimeout}
                    onChange={setIdleTimeout}
                    min={0}
-                   max={1440}
+                   max={10080} // A Week
                  />
                  <p className="text-[11px] text-zinc-500 mt-2">Auto-stop. 0 to disable.</p>
             </div>
@@ -313,9 +313,9 @@ export default function ServiceForm({ initialData, onCancel, onSuccess }: Servic
                   value={requestTimeout}
                   onChange={setRequestTimeout}
                   min={10}
-                  max={300}
+                  max={3600} // An Hour
                 />
-                 <p className="text-[11px] text-zinc-500 mt-2">Cold-start budget.</p>
+                 <p className="text-[11px] text-zinc-500 mt-2">Total Handling Timeout</p>
             </div>
             <div>
                 <NumberStepper 
@@ -325,7 +325,7 @@ export default function ServiceForm({ initialData, onCancel, onSuccess }: Servic
                   min={1}
                   max={1000}
                 />
-                <p className="text-[11px] text-zinc-500 mt-2">Simultaneous requests.</p>
+                <p className="text-[11px] text-zinc-500 mt-2">Max In-flight Requests</p>
             </div>
          </div>
       </div>
