@@ -1,6 +1,7 @@
 // front_end/src/components/services/service-table.tsx
 "use client";
 
+import { useRouter } from "next/navigation";
 import { Loader2, Power, RefreshCw, Trash2, Box } from "lucide-react";
 import { Service } from "@/types/service";
 import { CopyableText } from "@/components/ui/copyable-text";
@@ -29,6 +30,7 @@ export function ServiceTable({
   className = "",
 }: ServiceTableProps) {
   const { user: currentUser } = useAuth();
+  const router = useRouter();
 
   if (loading) {
     return (
@@ -106,6 +108,21 @@ export function ServiceTable({
                     </span>
                   );
                 }
+              }
+
+              if (svc.current_job) {
+                const originalNode = statusNode;
+                statusNode = (
+                  <div
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      router.push(`/jobs/${svc.current_job!.id}?from=services`);
+                    }}
+                    className="cursor-pointer hover:opacity-80 transition-opacity block"
+                  >
+                    {originalNode}
+                  </div>
+                );
               }
 
               return (

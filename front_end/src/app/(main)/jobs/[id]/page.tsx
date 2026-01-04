@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft, Terminal, Clock, GitBranch, Cpu, Box, AlignLeft, RefreshCw, Activity,
   ArrowUpToLine, ArrowDownToLine
@@ -21,8 +21,19 @@ import { useJobOperations } from "@/hooks/use-job-operations";
 export default function JobDetailsPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const jobId = params.id as string;
   const isSlurmTask = decodeURIComponent(jobId).endsWith("(slurm)");
+
+  const fromSource = searchParams.get("from") || "jobs";
+  const BACK_NAV_CONFIG: Record<string, { path: string; label: string }> = {
+    services: { path: "/services", label: "Back to Services" },
+    cluster:  { path: "/cluster",  label: "Back to Cluster" },
+    dashboard:{ path: "/dashboard",label: "Back to Dashboard" },
+    jobs:     { path: "/jobs",     label: "Back to Jobs" },
+  };
+  const navConfig = BACK_NAV_CONFIG[fromSource] || BACK_NAV_CONFIG["jobs"];
+  const { path: backDestination, label: backLabel } = navConfig;
 
   const [job, setJob] = useState<Job | null>(null);
   const [logs, setLogs] = useState<string>("");
@@ -129,11 +140,11 @@ export default function JobDetailsPage() {
       {/* Top Navigation */}
       <div className="mb-8">
         <button
-          onClick={() => router.push("/jobs")}
+          onClick={() => router.push(backDestination)}
           className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors text-sm mb-6 group"
         >
           <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-          Back to Jobs
+          {backLabel}
         </button>
 
         {/* Header Section */}

@@ -130,6 +130,7 @@ export default function ClusterPage() {
               onTerminate={onClickTerminate}
               emptyMessage="No running jobs."
               className="border-none min-h-[175px]"
+              fromSource="cluster"
             />
             
             {stats.total_running > 0 && (
@@ -163,6 +164,7 @@ export default function ClusterPage() {
               onTerminate={onClickTerminate}
               emptyMessage="Queue is empty."
               className="border-none min-h-[175px]"
+              fromSource="cluster"
             />
             
             {stats.total_pending > 0 && (

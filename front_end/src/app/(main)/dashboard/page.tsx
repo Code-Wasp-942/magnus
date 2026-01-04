@@ -146,6 +146,7 @@ export default function DashboardPage() {
               onTerminate={onClickTerminate}
               emptyMessage="No active jobs."
               className="border-none min-h-[300px]"
+              fromSource="dashboard"
             />
             
             {/* 分页组件 */}

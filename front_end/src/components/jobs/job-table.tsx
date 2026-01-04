@@ -19,6 +19,7 @@ interface JobTableProps {
   onTerminate: (job: Job) => void;
   emptyMessage?: string;
   className?: string;
+  fromSource?: string;
 }
 
 export function JobTable({
@@ -28,6 +29,7 @@ export function JobTable({
   onTerminate,
   emptyMessage = "No jobs found",
   className = "min-h-[400px]",
+  fromSource = "jobs",
 }: JobTableProps) {
   const router = useRouter();
   const { user: currentUser } = useAuth();
@@ -74,7 +76,7 @@ export function JobTable({
               return (
                 <tr
                   key={job.id}
-                  onClick={() => router.push(`/jobs/${job.id}`)}
+                  onClick={() => router.push(`/jobs/${job.id}?from=${fromSource}`)}
                   className="hover:bg-zinc-800/40 transition-colors group border-b border-zinc-800/50 last:border-0"
                 >
                   <td className="px-6 py-4 align-top whitespace-normal break-all">
