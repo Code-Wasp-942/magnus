@@ -394,17 +394,17 @@ export default function JobDetailsPage() {
                 {/* 悬浮控制按钮组 */}
                 {logs && (
                     <div className="absolute bottom-6 right-6 flex flex-col gap-2 z-10">
-                        <div className="flex flex-col gap-2 opacity-40 hover:opacity-100 transition-opacity duration-200">
+                        <div className="flex flex-col gap-2">
                             <button
                                 onClick={() => handleScroll('top')}
-                                className="p-2 bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-white hover:bg-zinc-700 rounded-lg shadow-lg transition-all active:scale-95"
+                                className="p-2 bg-zinc-800/80 backdrop-blur-sm border border-zinc-700/50 text-zinc-400 hover:text-white hover:bg-zinc-700 hover:border-zinc-600 rounded-lg shadow-lg transition-all active:scale-95"
                                 title="Scroll to Top"
                             >
                                 <ArrowUpToLine className="w-4 h-4" />
                             </button>
                             <button
                                 onClick={() => handleScroll('bottom')}
-                                className="p-2 bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-white hover:bg-zinc-700 rounded-lg shadow-lg transition-all active:scale-95"
+                                className="p-2 bg-zinc-800/80 backdrop-blur-sm border border-zinc-700/50 text-zinc-400 hover:text-white hover:bg-zinc-700 hover:border-zinc-600 rounded-lg shadow-lg transition-all active:scale-95"
                                 title="Scroll to Bottom"
                             >
                                 <ArrowDownToLine className="w-4 h-4" />

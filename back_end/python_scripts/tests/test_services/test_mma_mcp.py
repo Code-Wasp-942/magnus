@@ -28,7 +28,7 @@ async def main():
 
     async def _call_mma_mcp(expression: str) -> str:
         
-        server_address = os.getenv("MAGNUS_ADDRESS")
+        server_address = os.getenv("MAGNUS_ADDRESS", "127.0.0.1:8017")
         url = f"http://{server_address}/api/services/mma-mcp/mcp"
         
         transport = StreamableHttpTransport(url=url)

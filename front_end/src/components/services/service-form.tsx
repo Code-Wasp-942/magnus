@@ -127,9 +127,6 @@ export default function ServiceForm({ initialData, onCancel, onSuccess }: Servic
   const handleServiceNameChange = (val: string) => {
     setName(val);
     clearError('name');
-    if (!initialData && !jobTaskName) {
-        setJobTaskName(val);
-    }
   };
 
   const handleGpuTypeChange = (val: string) => {
@@ -179,9 +176,6 @@ export default function ServiceForm({ initialData, onCancel, onSuccess }: Servic
     if (!/^[a-z0-9-]+$/.test(serviceId)) { setErrorField("serviceId"); setErrorMessage("⚠️ Service ID must be lowercase slug"); scrollToError("field-serviceId"); return; }
     if (!description?.trim()) { setErrorField("description"); setErrorMessage("⚠️ Description is required"); scrollToError("field-description"); return; }
     
-    // Job Metadata Validations
-    if (!jobTaskName.trim()) { setErrorField("jobTaskName"); setErrorMessage("⚠️ Job Task Name is required"); scrollToError("field-jobTaskName"); return; }
-    
     // Repo Validations
     if (!namespace.trim() || !repoName.trim()) { setErrorField("repo"); setErrorMessage("⚠️ Repo required"); return; }
     if (!hasScanned) { setErrorMessage("⚠️ Please Scan Repo"); return; }
@@ -203,7 +197,7 @@ export default function ServiceForm({ initialData, onCancel, onSuccess }: Servic
       commit_sha: selectedCommit,
       entry_command: command,
       
-      job_task_name: jobTaskName,
+      job_task_name: jobTaskName.trim() || `[Service] ${serviceId}`,
       job_description: jobDescription, 
 
       gpu_count: gpuCount,
@@ -340,12 +334,12 @@ export default function ServiceForm({ initialData, onCancel, onSuccess }: Servic
         
         <div className="mb-4" id="field-jobTaskName">
             <label className={`text-xs uppercase tracking-wider mb-1.5 block font-medium ${errorField === 'jobTaskName' ? 'text-red-500' : 'text-zinc-500'}`}>
-                Job Task Name <span className="text-red-500">*</span>
+                Job Task Name
             </label>
             <input 
                 className={inputClass(errorField === 'jobTaskName')}
-                value={jobTaskName} 
-                placeholder="e.g. magnus-jupyter-worker"
+                value={jobTaskName}
+                placeholder={`Default: [Service] ${serviceId || '...'}`}
                 onChange={e => { setJobTaskName(e.target.value); clearError('jobTaskName'); }} 
             />
         </div>
