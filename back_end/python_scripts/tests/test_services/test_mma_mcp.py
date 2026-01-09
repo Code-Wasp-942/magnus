@@ -24,7 +24,10 @@ async def execute_mathematica(
 )-> str:
     
     server_address = os.getenv("MAGNUS_ADDRESS", "127.0.0.1:8017")
-    url = f"http://{server_address}/api/services/mma-mcp/mcp"
+    token = os.getenv("MAGNUS_TOKEN")
+    if not token:
+        raise ValueError("❌ Environment variable 'MAGNUS_TOKEN' is not set.")
+    url = f"http://{server_address}/api/services/mma-mcp/mcp?token={token}"
     
     transport = StreamableHttpTransport(url=url)
     

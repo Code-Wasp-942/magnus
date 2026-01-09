@@ -64,3 +64,12 @@ class JwtSigner:
         except jwt.PyJWTError:
             # 无论是过期还是签名错误，都视为无效
             return None
+        
+        
+    def verify(
+        self, 
+        token: str
+    ) -> Dict[str, Any]:
+        
+        # 不做异常捕获，将过期/签名错误等具体异常抛给上层业务逻辑处理
+        return jwt.decode(token, self.secret_key, algorithms = [self.algorithm])

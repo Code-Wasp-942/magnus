@@ -37,8 +37,11 @@ async def generate_image(
     seed: Optional[int] = None,
 )-> bytes:
     
+    token = os.getenv("MAGNUS_TOKEN")
+    if not token:
+        raise ValueError("❌ Environment variable 'MAGNUS_TOKEN' is not set.")
     server_address = os.getenv("MAGNUS_ADDRESS", DEFAULT_ADDRESS)
-    url = f"http://{server_address}{SERVICE_PATH}"
+    url = f"http://{server_address}{SERVICE_PATH}?token={token}"
     
     optional_params = {}
     if seed is not None: optional_params["seed"] = seed

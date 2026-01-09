@@ -1,4 +1,5 @@
 # back_end/server/routers/services.py
+import time
 import httpx
 import logging
 import asyncio
@@ -7,8 +8,10 @@ from typing import Optional, Dict, Any, Tuple
 from datetime import datetime
 from collections import defaultdict
 from pydantic import BaseModel
+from dataclasses import dataclass
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, Query, status
+from fastapi.security.utils import get_authorization_scheme_param
 from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
 from sqlalchemy.orm import Session
@@ -22,6 +25,7 @@ from ..schemas import ServiceResponse, ServiceCreate, PagedServiceResponse
 from .._service_manager import service_manager
 from .._magnus_config import magnus_config
 from .._scheduler import scheduler
+from .._jwt_signer import jwt_signer
 from .auth import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -331,6 +335,87 @@ def list_services(
     return {"total": total, "items": items}
 
 
+@dataclass
+class CachedUser:
+    id: str
+    name: str
+    token: str
+    expires_at: float
+
+_auth_cache: Dict[str, CachedUser] = {}
+AUTH_CACHE_TTL = 60.0  # 用户重置 Token 后 1 分钟内生效
+
+def _get_cached_user(token: str) -> Optional[models.User]:
+    if token in _auth_cache:
+        cached = _auth_cache[token]
+        if time.time() < cached.expires_at:
+            return models.User(id=cached.id, name=cached.name)
+        else:
+            del _auth_cache[token]
+    return None
+
+def _set_cached_user(token: str, user: models.User):
+    _auth_cache[token] = CachedUser(
+        id = user.id,
+        name = user.name,
+        token = token,
+        expires_at = time.time() + AUTH_CACHE_TTL
+    )
+
+
+def _authenticate_request(request: Request, db: Session) -> models.User:
+    """
+    硬编码的全能鉴权逻辑：依次尝试 Header -> Query -> Cookie。
+    只要有一处能提取到合法的 Magnus Token，即视为验证通过。
+    """
+    token = None
+
+    # Try Authorization Header
+    authorization = request.headers.get("Authorization")
+    if authorization:
+        scheme, param = get_authorization_scheme_param(authorization)
+        if scheme.lower() == "bearer":
+            token = param
+
+    # Try Query Parameter
+    if not token:
+        token = request.query_params.get("token")
+
+    # Try Cookies
+    if not token:
+        token = request.cookies.get("access_token") or request.cookies.get("token")
+
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated. Please provide token via Header(Bearer), Query(?token=), or Cookie.",
+        )
+        
+    cached_user = _get_cached_user(token)
+    if cached_user: return cached_user
+
+    user = db.query(models.User).filter(models.User.token == token).first()
+
+    # JWT 兜底
+    if not user:
+        try:
+            payload = jwt_signer.verify(token)
+            user_id = payload.get("sub")
+            if user_id:
+                user = db.query(models.User).filter(models.User.id == user_id).first()
+        except Exception:
+            pass
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials.",
+        )
+
+    _set_cached_user(token, user)
+    return user
+
+
 @router.api_route(
     "/services/{service_id}/{path:path}",
     methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"],
@@ -339,8 +424,10 @@ async def proxy_service_request(
     service_id: str,
     path: str,
     request: Request,
+    db: Session = Depends(database.get_db),
 ) -> StreamingResponse:
     # 1. Validation
+    _ = await asyncio.to_thread(_authenticate_request, request, db)
     service_snap = await asyncio.to_thread(_get_service_snapshot_standalone, service_id)
 
     # 2. Semaphore Management
