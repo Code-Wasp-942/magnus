@@ -1,7 +1,7 @@
 // front_end/src/app/(main)/jobs/[id]/page.tsx
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft, Terminal, Clock, GitBranch, Cpu, Box, AlignLeft, RefreshCw, Activity,
@@ -17,8 +17,12 @@ import { JobStatusBadge } from "@/components/jobs/job-status-badge";
 import RenderMarkdown from "@/components/ui/render-markdown";
 import { JobDrawer } from "@/components/jobs/job-drawer";
 import { useJobOperations } from "@/hooks/use-job-operations";
+import { ConfirmationDialog } from "@/components/ui/confirmation-dialog";
+import { useAuth } from "@/context/auth-context";
+import { SquareX } from "lucide-react";
 
 export default function JobDetailsPage() {
+  const { user } = useAuth();
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -42,8 +46,23 @@ export default function JobDetailsPage() {
 
   const logContainerRef = useRef<HTMLDivElement>(null);
 
-  const { drawerProps, handleCloneJob } = useJobOperations({
-    onSuccess: () => router.push("/jobs")
+  const fetchJob = useCallback(async (isBackground = false) => {
+    if (isSlurmTask) return;
+    
+    if (!isBackground) setLoading(true);
+    try {
+      const data = await client(`/api/jobs/${jobId}`);
+      setJob(data);
+    } catch (e) {
+      console.error("Failed to fetch job", e);
+    } finally {
+      if (!isBackground) setLoading(false);
+    }
+  }, [jobId, isSlurmTask]);
+
+  const { drawerProps, handleCloneJob, onClickTerminate, terminateDialogProps } = useJobOperations({
+    onSuccess: () => router.push("/jobs"),
+    onTerminateSuccess: () => fetchJob(false)
   });
 
   const handleScroll = (direction: "top" | "bottom") => {
@@ -197,15 +216,25 @@ export default function JobDetailsPage() {
               </div>
             )}
 
-            {/* Clone Button */}
             <div className="ml-4 pl-4 border-l border-zinc-700/50 h-full flex items-center">
+              {/* Clone Button */}
               <button
                 onClick={() => handleCloneJob(job)}
-                className="group flex items-center justify-center w-10 h-10 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700/50 hover:border-zinc-600 transition-all shadow-sm active:scale-95"
+                className="p-2 bg-zinc-800 hover:bg-zinc-700 hover:text-white rounded-lg text-zinc-400 transition-colors border border-zinc-700/50 shadow-sm"
                 title="Clone this job"
               >
-                <RefreshCw className="w-5 h-5 text-zinc-400 group-hover:text-white transition-colors" />
+                <RefreshCw className="w-5 h-5" />
               </button>
+              {/* Terminate Button */}
+              {user?.id === job.user?.id && ["Pending", "Running", "Paused"].includes(job.status) && (
+                <button
+                  onClick={() => onClickTerminate(job)}
+                  className="ml-2 p-2 bg-red-950/30 hover:bg-red-900/50 text-red-400 hover:text-red-300 rounded-lg transition-colors border border-red-900/30"
+                  title="Terminate Task"
+                >
+                  <SquareX className="w-5 h-5" />
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -473,6 +502,7 @@ export default function JobDetailsPage() {
       </div>
 
       <JobDrawer {...drawerProps} />
+      <ConfirmationDialog {...terminateDialogProps} />
     </div>
   );
 }

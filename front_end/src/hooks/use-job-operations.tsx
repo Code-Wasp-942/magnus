@@ -5,10 +5,11 @@ import { JobFormData } from "@/components/jobs/job-form";
 import { client } from "@/lib/api";
 
 interface UseJobOperationsProps {
-  onSuccess?: () => void; // 操作成功后的回调（通常是刷新列表）
+  onSuccess?: () => void;
+  onTerminateSuccess?: () => void;
 }
 
-export function useJobOperations({ onSuccess }: UseJobOperationsProps = {}) {
+export function useJobOperations({ onSuccess, onTerminateSuccess }: UseJobOperationsProps = {}) {
   // --- Drawer / Form State ---
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [drawerMode, setDrawerMode] = useState<"create" | "clone">("create");
@@ -64,7 +65,11 @@ export function useJobOperations({ onSuccess }: UseJobOperationsProps = {}) {
     setIsTerminating(true);
     try {
       await client(`/api/jobs/${jobToTerminate.id}/terminate`, { method: "POST" });
-      if (onSuccess) onSuccess();
+      if (onTerminateSuccess) {
+        onTerminateSuccess();
+      } else if (onSuccess) {
+        onSuccess();
+      }
       setJobToTerminate(null);
     } catch (e) {
       alert("Failed to terminate job");
