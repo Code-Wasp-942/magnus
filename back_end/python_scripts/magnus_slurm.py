@@ -8,8 +8,7 @@ from pathlib import Path
 
 def log_cloud_only(msg: str):
     """
-    辅助函数：只打印到标准输出（给 Magnus 云端看），不写入用户文件。
-    使用 flush 确保云端日志实时性。
+    辅助函数：只打印到标准输出（给 Magnus 云端看），不写入用户本地文件。
     """
     sys.stdout.write(f"{msg}\n")
     sys.stdout.flush()
@@ -29,7 +28,7 @@ def main():
     os.makedirs(work_dir, exist_ok=True)
 
     # 2. 生成临时包装脚本
-    # 注意：这里我们回退到了最基础的 Conda 处理逻辑，不做额外魔改
+    # 这一步只负责生成纯粹的执行逻辑，不要在此处打印任何 [Magnus] 相关的日志
     temp_script = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.sh', prefix='magnus_runner_')
     script_path = Path(temp_script.name)
     
@@ -52,13 +51,10 @@ else
 fi
 
 # B. Activate Environment
-# 注意：这里的 echo 会被 Python 捕获，我们在 Python 层过滤它，不让它进用户日志文件
-echo "[Magnus] Activating Conda environment: {args.conda_environment}"
-conda activate {args.conda_environment} || {{ echo "[Magnus] Error: Failed to activate environment '{args.conda_environment}'"; exit 1; }}
+# 如果激活失败，直接报错退出。不需要 echo [Magnus] ...
+conda activate {args.conda_environment} || {{ echo "Error: Failed to activate environment '{args.conda_environment}'"; exit 1; }}
 
 # C. Execute User Script
-echo "[Magnus] Starting user script execution..."
-echo "---------------------------------------------------"
 set -e
 {args.slurm_script}
 """
@@ -76,12 +72,20 @@ set -e
             out_path = work_dir / f"slurm-{job_id}.out"
 
         out_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # --- Python 层打印控制信息 ---
+        log_cloud_only(f"[Magnus] Activating Conda environment: {args.conda_environment}")
         log_cloud_only(f"[Magnus] Redirecting user output to: {out_path}")
+        
+        # --- 打印分隔符 (云端可见，不进文件) ---
+        log_cloud_only("-" * 60)
+        log_cloud_only(">>> User Script Execution Start >>>")
+        log_cloud_only("-" * 60)
 
-        # 4. 执行脚本 (Stream Processing + Filtering)
+        # 4. 执行脚本 (直通模式)
         cmd = ["bash", str(script_path)]
         
-        # 打开文件准备写入 ('w' 模式，保证文件从头开始是纯净的)
+        # 打开文件准备写入
         with open(out_path, "w", encoding="utf-8") as outfile:
             process = subprocess.Popen(
                 cmd, 
@@ -94,27 +98,28 @@ set -e
             
             assert process.stdout is not None
             
+            # === 核心逻辑：无过滤直通 ===
+            # 现在非常干净：管道里出来的全是用户脚本(或conda报错)的真实输出
+            # 我们不需要检查 startswith，直接两头写
             for line in process.stdout:
-                # === 核心逻辑：净化过滤器 ===
-                # 检查这行是不是 Magnus 的控制信息
-                # 如果是，只发给云端 (sys.stdout)，不写入文件 (outfile)
-                if line.startswith("[Magnus]") or line.startswith("---------------------------------------------------"):
-                    sys.stdout.write(line)
-                    sys.stdout.flush()
-                else:
-                    # 如果是用户的真实输出
-                    # 1. 写入本地文件
-                    outfile.write(line)
-                    outfile.flush()
-                    # 2. 同时发给云端
-                    sys.stdout.write(line)
-                    sys.stdout.flush()
+                # 1. 写入本地文件
+                outfile.write(line)
+                outfile.flush()
+                
+                # 2. 打印到云端流
+                sys.stdout.write(line)
+                sys.stdout.flush() 
 
             return_code = process.wait()
 
+        # --- 打印结束分隔符 ---
+        log_cloud_only("-" * 60)
+        log_cloud_only(f"<<< User Script Execution End (Exit Code: {return_code}) <<<")
+        log_cloud_only("-" * 60)
+
         # 5. 检查结果
         if return_code != 0:
-            log_cloud_only(f"[Magnus] Job failed with exit code: {return_code}")
+            log_cloud_only(f"[Magnus] Job failed.")
             sys.exit(return_code)
         
         log_cloud_only(f"[Magnus] Job completed successfully.")
