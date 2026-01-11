@@ -74,8 +74,8 @@ Magnus-Platform/
 │   │   │   ├── __init__.py                                # API汇总
 │   │   │   ├── auth.py                                    # 鉴权API
 │   │   │   ├── blueprints.py                              # 蓝图API
-│   │   │   └── cluster.py                                 # 集群API
-│   │   │   ├── github.py                                  # github API
+│   │   │   ├── cluster.py                                 # 集群API
+│   │   │   ├── github.py                                  # GitHub API
 │   │   │   ├── jobs.py                                    # 任务API
 │   │   │   └── services.py                                # 服务API
 │   │   └── schemas.py                                     # Pydantic 数据模型
@@ -87,6 +87,7 @@ Magnus-Platform/
 │   │       ├── __init__.py
 │   │       ├── externals.py
 │   │       ├── github_tools.py                            # GitHub工具
+│   │       ├── json_tools.py                              # JSON工具
 │   │       ├── jwt_tools.py                               # JWT工具
 │   │       ├── typing.py
 │   │       └── yaml_tools.py                              # YAML工具
@@ -96,10 +97,17 @@ Magnus-Platform/
 │   │   │   ├── magnus-debug.py                            # Magnus 调试任务蓝图
 │   │   │   └── magnus-slurm.py                            # SLURM 任务蓝图
 │   │   ├── magnus_debug.py                                # 调试脚本
+│   │   ├── magnus_slurm.py                                # SLURM 任务脚本
+│   │   ├── migrate_database.py                            # 数据库迁移脚本
 │   │   └── tests/                                         # 测试工具
 │   │       ├── test_github_tools.py
 │   │       ├── test_magnus_basic.py
-│   │       └── test_rtx5090_nvlink.py                     # GPU互联测试
+│   │       ├── test_rtx5090_nvlink.py                     # GPU互联测试
+│   │       └── test_services/                             # 服务测试
+│   │           ├── test_llm_inference.py                  # LLM推理测试
+│   │           ├── test_mma_mcp.py                        # MMA-MCP测试
+│   │           ├── test_vlm_inference.py                  # VLM推理测试
+│   │           └── test_z_image.py                        # Z-Image 生图测试
 │   ├── pyproject.toml                                     # Python 项目配置
 │   ├── uv.lock                                            # UV依赖锁文件
 │   └── .python-version                                    # Python版本指定
