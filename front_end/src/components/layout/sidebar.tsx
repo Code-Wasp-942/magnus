@@ -24,7 +24,7 @@ const NAV_ITEMS = [
   { name: "Jobs", href: "/jobs", icon: Rocket },
   { name: "Blueprints", href: "/blueprints", icon: ScrollText },
   { name: "Services", href: "/services", icon: Layers },
-  { name: "Tools", href: "/tools", icon: Wrench },
+  // { name: "Tools", href: "/tools", icon: Wrench },
 ];
 
 export function Sidebar() {
