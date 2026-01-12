@@ -358,9 +358,14 @@ class SlurmManager:
                     job_id = str(job.get("job_id"))
                     user = job.get("user_name")
                     name = job.get("name")
-                    
-                    # 时间处理 (Unix Timestamp -> ISO)
-                    start_ts = job.get("start_time", {}).get("number")
+                    raw_start_time = job.get("start_time")
+                    start_ts = None
+                    if isinstance(raw_start_time, dict):
+                        # 新版 Slurm: {"number": 1234567890, ...}
+                        start_ts = raw_start_time.get("number")
+                    elif isinstance(raw_start_time, int):
+                        # 旧版 Slurm: 1234567890
+                        start_ts = raw_start_time 
                     if start_ts:
                         start_time_str = datetime.fromtimestamp(start_ts).isoformat()
                     else:
@@ -415,7 +420,7 @@ class SlurmManager:
                     })
                     
                 except Exception as e:
-                    logger.warning(f"Failed to parse job json: {e}")
+                    logger.warning(f"Failed to parse job json: {e}\nTraceback:\n{traceback.format_exc()}")
                     continue
             
             return tasks
