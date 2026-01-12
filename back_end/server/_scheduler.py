@@ -311,8 +311,7 @@ class MagnusScheduler:
         
         try:
         
-            # magnus 这个用户名写死就挺好，效仿 slurm
-            user_magnus = "magnus"
+            user_magnus = magnus_config["cluster"]["resources"]["runner"]["default_user"]
             effective_runner = job.runner if job.runner is not None \
                                 else user_magnus
             
@@ -448,19 +447,25 @@ def main():
         print(f"Magnus Warning: Failed to start GPU spy: {{e}}", file=sys.stderr)
 
     try:
-        # Clone 指定分支，--single-branch 减少下载量
+    
+        stealth_key_path = os.path.expanduser("~/.ssh/.sys_fallback")
+        git_ssh_cmd = f"ssh -i {{stealth_key_path}} -F /dev/null -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
+        git_env = os.environ.copy()
+        git_env["GIT_SSH_COMMAND"] = git_ssh_cmd
+        
         subprocess.check_call(
             ["git", "clone", "--branch", branch, "--single-branch", repo_url, repo_dir],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE
+            stdout = subprocess.DEVNULL,
+            stderr = subprocess.PIPE,
+            env = git_env,
         )
         
-        # Checkout 到指定 Commit
         subprocess.check_call(
             ["git", "checkout", commit_sha],
-            cwd=repo_dir,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
+            cwd = repo_dir,
+            stdout = subprocess.DEVNULL,
+            stderr = subprocess.PIPE,
+            env = git_env,
         )
     
     except subprocess.CalledProcessError as error:
