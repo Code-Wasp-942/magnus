@@ -13,7 +13,6 @@ import {
   LogOut, 
   ScrollText, 
   Layers, 
-  Wrench 
 } from "lucide-react";
 import { useAuth } from "@/context/auth-context"; 
 import { CLUSTER_CONFIG } from "@/lib/config";
