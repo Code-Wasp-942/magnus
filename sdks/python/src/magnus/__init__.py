@@ -1,3 +1,4 @@
+# sdks/python/src/magnus/__init__.py
 __all__ = [
     "hello_world",
 ]

@@ -196,8 +196,18 @@ Magnus-Platform/
 │   ├── postcss.config.mjs                                 # PostCSS配置
 │   ├── start-dev.mjs                                      # 开发启动脚本
 │   └── .eslintrc.json                                     # ESLint配置
+├── sdks/                                                  # 多语言 SDK
+│   └── python/                                            # Python SDK (magnus-sdk)
+│       ├── src/
+│       │   └── magnus/
+│       │       ├── cli/                                   # CLI 命令行工具包
+│       │       │   ├── __init__.py
+│       │       │   ├── commands.py                        # CLI 命令实现
+│       │       │   └── main.py                            # CLI 入口
+│       │       └── __init__.py                            # SDK 核心逻辑
+│       └── pyproject.toml                                 # SDK 项目配置
 └── scripts/                                               # 脚本
-    └── deploy.sh                                          # 部署脚本
+    └── deploy.py                                          # 部署脚本
 ```
 
 ## 🛠️ 技术栈
