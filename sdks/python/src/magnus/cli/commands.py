@@ -42,6 +42,7 @@ def parse_cli_args(args: List[str]) -> Dict[str, Any]:
         key = args[i]
         if key.startswith("--"):
             key = key[2:]
+            key = key.replace("-", "_")
             
             # Check for value
             if i + 1 < len(args) and not args[i + 1].startswith("--"):
@@ -81,6 +82,7 @@ def parse_blueprint_args(args: List[str]) -> Dict[str, str]:
         key = args[i]
         if key.startswith("--"):
             key = key[2:]
+            key = key.replace("-", "_")
             
             if i + 1 < len(args) and not args[i + 1].startswith("--"):
                 value = args[i + 1] # Keep as raw string
