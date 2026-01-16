@@ -31,7 +31,7 @@ export function ServiceDrawer({
       isOpen={isOpen}
       onClose={onClose}
       title={title}
-      icon={title === 'Create Service' ? <Server className="w-5 h-5 text-blue-500" /> : <RefreshCw className="w-5 h-5 text-purple-500" />}
+      icon={isEdit ? <RefreshCw className="w-5 h-5 text-blue-500" /> : <Server className="w-5 h-5 text-purple-500" />}
       width="w-[600px]"
     >
       {isOpen && (
