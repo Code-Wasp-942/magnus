@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft, Terminal, Clock, GitBranch, Cpu, Box, AlignLeft, RefreshCw, Activity,
-  ArrowUpToLine, ArrowDownToLine
+  ArrowUpToLine, ArrowDownToLine, Copy, Check
 } from "lucide-react";
 import { client } from "@/lib/api";
 import { CopyableText } from "@/components/ui/copyable-text";
@@ -43,6 +43,17 @@ export default function JobDetailsPage() {
   const [logs, setLogs] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"console" | "description" | "metrics">("console");
+
+  const [copiedCommand, setCopiedCommand] = useState(false);
+  const copyToClipboard = async (text: string, setCopied: (v: boolean) => void) => {
+    try {
+        await navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+    } catch (err) {
+        console.error('Failed to copy', err);
+    }
+  };
 
   const logContainerRef = useRef<HTMLDivElement>(null);
 
@@ -350,16 +361,24 @@ export default function JobDetailsPage() {
 
           {/* Entry Command */}
           <div className="flex-1 min-h-0 flex flex-col bg-zinc-900/30 border border-zinc-800 rounded-xl overflow-hidden">
-            <div className="shrink-0 px-5 py-3 border-b border-zinc-800 bg-zinc-900/50 flex items-center gap-2">
-              <Terminal className="w-4 h-4 text-zinc-400" />
-              <h3 className="text-sm font-semibold text-zinc-200">Entry Command</h3>
+            <div className="shrink-0 px-5 py-3 border-b border-zinc-800 bg-zinc-900/50 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Terminal className="w-4 h-4 text-zinc-400" />
+                <h3 className="text-sm font-semibold text-zinc-200">Entry Command</h3>
+              </div>
+              <button 
+                onClick={() => copyToClipboard(job.entry_command, setCopiedCommand)}
+                className="text-zinc-500 hover:text-zinc-200 transition-colors"
+                title="Copy Full Command"
+              >
+                {copiedCommand ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+              </button>
             </div>
+            
             <div className="flex-1 overflow-auto p-4 bg-zinc-950 custom-scrollbar">
-              <CopyableText
-                text={job.entry_command}
-                variant="text"
-                className="text-xs font-mono text-green-400 leading-relaxed [&_span]:whitespace-pre-wrap"
-              />
+              <pre className="text-xs font-mono text-green-400 leading-relaxed whitespace-pre-wrap break-all selection:bg-green-900/50 selection:text-green-200">
+                {job.entry_command}
+              </pre>
             </div>
           </div>
 
