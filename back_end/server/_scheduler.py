@@ -478,7 +478,7 @@ def main():
             f"conda activate {{execution_conda_environment}}",
             "unset VIRTUAL_ENV",
             "export UV_CACHE_DIR={magnus_uv_cache}",
-            f"export MAGNUS_TOKEN={{magnus_token}}",
+            f"export MAGNUS_TOKEN={{user_token}}",
             f"export MAGNUS_RESULT={{result_marker_path}}",
         ]
         # 无论是否有结果，只要执行到这里，就写入 .magnus_success
