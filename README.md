@@ -270,7 +270,7 @@ def generate_job(
     return JobSubmission(
         task_name = "Magnus Debug",
         description = f"调试任务 - 使用人：{user_name}",
-        namespace = "PKU-Plasma",
+        namespace = "Rise-AGI",
         repo_name = "magnus",
         branch = "main",
         entry_command = "python magnus_debug.py",

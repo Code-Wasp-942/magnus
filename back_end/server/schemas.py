@@ -40,7 +40,7 @@ class UserInfo(BaseModel):
 class JobSubmission(BaseModel):
     task_name: str
     description: Optional[str] = None
-    namespace: str = "PKU-Plasma"
+    namespace: str = "Rise-AGI"
     repo_name: str
     branch: str
     commit_sha: str

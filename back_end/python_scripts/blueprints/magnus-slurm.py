@@ -88,7 +88,7 @@ python magnus_slurm.py \\
     return JobSubmission(
         task_name = "Magnus Slurm",
         description = description,
-        namespace = "PKU-Plasma",
+        namespace = "Rise-AGI",
         repo_name = "magnus",
         branch = "main",
         commit_sha = "HEAD",

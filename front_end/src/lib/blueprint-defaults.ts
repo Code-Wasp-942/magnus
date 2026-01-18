@@ -50,7 +50,7 @@ magnus-connect
     return JobSubmission(
         task_name = "Magnus Debug",
         description = description,
-        namespace = "PKU-Plasma",
+        namespace = "Rise-AGI",
         repo_name = "magnus",
         branch = "main",
         commit_sha = "HEAD",

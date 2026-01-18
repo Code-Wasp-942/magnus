@@ -55,7 +55,7 @@ interface JobFormProps {
 const JobForm = forwardRef(function JobForm({ mode, initialData, onCancel, onSuccess }: JobFormProps, ref) {
   const [taskName, setTaskName] = useState(initialData?.taskName || "");
   const [description, setDescription] = useState(initialData?.description || "");
-  const [namespace, setNamespace] = useState(initialData?.namespace || "PKU-Plasma");
+  const [namespace, setNamespace] = useState(initialData?.namespace || "Rise-AGI");
   const [repoName, setRepoName] = useState(initialData?.repoName || "");
   
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -228,7 +228,7 @@ const JobForm = forwardRef(function JobForm({ mode, initialData, onCancel, onSuc
         const data = await client(`/api/github/${namespace}/${repoName}/commits?branch=${selectedBranch}`);
         setCommits(data);
         if (mode === 'create' && data.length > 0) {
-            setSelectedCommit(data[0].sha);
+            setSelectedCommit("HEAD");
         }
       } catch (e) { 
         console.error("Fetch commits failed", e); 
@@ -328,7 +328,7 @@ const JobForm = forwardRef(function JobForm({ mode, initialData, onCancel, onSuc
               className={`w-full bg-zinc-950 border px-3 py-2.5 rounded-lg text-white text-sm focus:border-blue-500 outline-none transition-all placeholder-zinc-700
                 ${errorField === 'namespace' ? 'animate-shake border-red-500' : 'border-zinc-800'}`} 
               value={namespace} 
-              placeholder="e.g. PKU-Plasma"
+              placeholder="e.g. Rise-AGI"
               onChange={e => { setNamespace(e.target.value); clearError('namespace'); }} 
             />
           </div>
@@ -366,7 +366,18 @@ const JobForm = forwardRef(function JobForm({ mode, initialData, onCancel, onSuc
           <SearchableSelect 
             id="field-commit" label="Commit" disabled={!hasScanned} placeholder="Select commit..." className="mb-4"
             value={selectedCommit} onChange={(v) => { setSelectedCommit(v); clearError('commit'); }} 
-            options={commits.map(c => ({ label: c.message, value: c.sha, meta: `${c.sha.substring(0, 7)} • ${c.author}` }))} 
+            options={[
+              { 
+                label: "Latest Commit (HEAD)", 
+                value: "HEAD", 
+                meta: "Use latest code" 
+              },
+              ...commits.map(c => ({ 
+                label: c.message, 
+                value: c.sha, 
+                meta: `${c.sha.substring(0, 7)} • ${c.author}` 
+              }))
+            ]}
             hasError={errorField === 'commit'}
           />
         </div>

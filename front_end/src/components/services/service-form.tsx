@@ -81,14 +81,14 @@ const ServiceForm = forwardRef(function ServiceForm({ initialData, onCancel, onS
   const [jobDescription, setJobDescription] = useState(data?.job_description || "");
 
   // === Code Source ===
-  const [namespace, setNamespace] = useState(data?.namespace || "PKU-Plasma");
+  const [namespace, setNamespace] = useState(data?.namespace || "Rise-AGI");
   const [repoName, setRepoName] = useState(data?.repo_name || "");
   
   const [branches, setBranches] = useState<Branch[]>([]);
   const [commits, setCommits] = useState<Commit[]>([]);
   
   const [selectedBranch, setSelectedBranch] = useState(data?.branch || "");
-  const [selectedCommit, setSelectedCommit] = useState(data?.commit_sha || "");
+  const [selectedCommit, setSelectedCommit] = useState(data?.commit_sha || "HEAD");
   const [command, setCommand] = useState(data?.entry_command || "");
   
   // === Resources ===
@@ -480,7 +480,18 @@ const ServiceForm = forwardRef(function ServiceForm({ initialData, onCancel, onS
             disabled={!hasScanned} 
             value={selectedCommit} 
             onChange={(v) => { setSelectedCommit(v); clearError('commit'); }} 
-            options={commits.map(c => ({ label: c.message, value: c.sha, meta: `${c.sha.substring(0, 7)} • ${c.author}` }))}
+            options={[
+              { 
+                label: "Latest Commit (HEAD)", 
+                value: "HEAD", 
+                meta: "Use latest code" 
+              },
+              ...commits.map(c => ({ 
+                label: c.message, 
+                value: c.sha, 
+                meta: `${c.sha.substring(0, 7)} • ${c.author}` 
+              }))
+            ]}
             hasError={errorField === 'commit'}
             placeholder="Select commit..."
             className="mb-4"
