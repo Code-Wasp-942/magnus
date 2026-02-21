@@ -214,6 +214,8 @@ t("jobForm.default", { v: 64 }) // 插值
 ### Blueprint 系统
 Python 函数签名 → 前端表单。`Annotated` 类型注解定义 UI 元数据。
 
+**Preference 签名哈希**：用户的蓝图参数偏好通过 `BlueprintParamSchema` 的 `model_dump()` → JSON → SHA256 关联到蓝图签名。给 `BlueprintParamSchema` 增删字段会改变哈希，导致所有用户的已缓存偏好失效。修改此 Schema 前须评估影响。
+
 ### 弹性服务
 支持 scale-to-zero，空闲超时自动缩容。
 
