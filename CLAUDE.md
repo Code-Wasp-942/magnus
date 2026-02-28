@@ -201,8 +201,6 @@ t("jobs.table.task")           // 简单键
 t("jobForm.default", { v: 64 }) // 插值
 ```
 
-**不翻译的术语**：Dashboard, Cluster, Jobs, Blueprints, Services, Explorer, GPU, CPU
-
 ---
 
 ## 核心业务概念
