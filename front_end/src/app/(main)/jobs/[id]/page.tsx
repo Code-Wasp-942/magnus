@@ -64,6 +64,38 @@ export default function JobDetailsPage() {
   const lastClickTimeRef = useRef(0);
 
   const [copiedCommand, setCopiedCommand] = useState(false);
+
+  const custodyToken = useMemo(() => {
+    const action = job?.action;
+    if (!action) {
+      return null;
+    }
+    const match = action.match(/magnus\s+receive\s+([^\s]+)/);
+    if (!match) {
+      return null;
+    }
+    const rawSecret = match[1].trim();
+    if (!rawSecret) {
+      return null;
+    }
+    if (rawSecret.startsWith("magnus-secret:")) {
+      return rawSecret.slice("magnus-secret:".length);
+    }
+    return rawSecret;
+  }, [job?.action]);
+
+  const handleDownloadStagedFile = useCallback(() => {
+    if (!custodyToken) {
+      return;
+    }
+    const loginToken = typeof window !== "undefined" ? localStorage.getItem("magnus_token") : null;
+    const baseUrl = `/api/files/download/${encodeURIComponent(custodyToken)}`;
+    const downloadUrl = loginToken
+      ? `${baseUrl}?token=${encodeURIComponent(loginToken)}`
+      : baseUrl;
+    window.open(downloadUrl, "_blank", "noopener,noreferrer");
+  }, [custodyToken]);
+
   const copyToClipboard = async (text: string, setCopied: (v: boolean) => void) => {
     try {
         await navigator.clipboard.writeText(text);
@@ -440,6 +472,16 @@ export default function JobDetailsPage() {
                       className="break-all"
                     />
                   </div>
+
+                  <button
+                    onClick={handleDownloadStagedFile}
+                    disabled={!custodyToken}
+                    className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-zinc-700 text-xs font-medium text-zinc-300 hover:text-white hover:border-zinc-500 hover:bg-zinc-800/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={custodyToken ? "通过 file custody 下载暂存产物" : "该任务未提供可下载的暂存文件"}
+                  >
+                    <ArrowDownToLine className="w-3.5 h-3.5" />
+                    下载暂存文件
+                  </button>
                 </div>
               </div>
             </div>
