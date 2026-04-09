@@ -1,6 +1,7 @@
 # sdks/python/src/magnus/cli/commands.py
 import io
 import os
+import re
 import sys
 import json
 import signal
@@ -29,6 +30,7 @@ from .. import (
     submit_job as api_submit_job,
     call_service,
     custody_file as api_custody_file,
+    create_shared_folder as api_create_shared_folder,
     list_jobs as api_list_jobs,
     get_job as api_get_job,
     get_job_result as api_get_job_result,
@@ -542,6 +544,15 @@ image_app = typer.Typer(
     ),
 )
 app.add_typer(image_app)
+shared_app = typer.Typer(
+    name="shared",
+    help=(
+        "Shared folder operations.\n\n"
+        "Subcommands:\n"
+        "  create    Create a shared folder token\n"
+    ),
+)
+app.add_typer(shared_app)
 
 
 @app.command(name="config")
@@ -892,7 +903,10 @@ _JOB_PARAM_KEYS: Dict[str, type] = {
     "ephemeral_storage": str,
     "runner": str,
     "system_entry_command": str,
+    "shared_file": str,
 }
+
+_SHARED_MOUNT_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 def _parse_job_args(args: List[str]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
@@ -915,6 +929,21 @@ def _parse_job_args(args: List[str]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
             if key in _CLI_KEY_TYPES:
                 cli_config[key] = _coerce_cli_value(key, value)
+            elif key == "shared_file":
+                if "=" not in value:
+                    raise MagnusError("Invalid --shared-file format, expected <name>=<token>")
+                mount_name, token = value.split("=", 1)
+                mount_name = mount_name.strip()
+                token = token.strip()
+                if not mount_name or not _SHARED_MOUNT_NAME_PATTERN.fullmatch(mount_name):
+                    raise MagnusError(f"Invalid shared mount name '{mount_name}'. Allowed: letters, numbers, '_' and '-'")
+                if not token:
+                    raise MagnusError("Shared file token cannot be empty")
+                shared_files = job_params.get("shared_files")
+                if not isinstance(shared_files, dict):
+                    shared_files = {}
+                    job_params["shared_files"] = shared_files
+                shared_files[mount_name] = token
             elif key in _JOB_PARAM_KEYS:
                 expected_type = _JOB_PARAM_KEYS[key]
                 job_params[key] = expected_type(value) if expected_type is not str else value
@@ -1108,6 +1137,7 @@ Optional parameters:
   --job-type TEXT           Job type (A1/A2/B1/B2)
   --description TEXT        Job description
   --system-entry-command TEXT  System-level setup script
+  --shared-file TEXT        Shared mount pair: <name>=<token> (repeatable)
 """.strip()
 
 _SUBMIT_OPTIONS_EPILOG = f"""{_JOB_PARAMS_DOC}
@@ -1632,6 +1662,23 @@ def custody_cmd(
         raise typer.Exit(code=1)
     except Exception as e:
         print_error(f"Unexpected error: {e}")
+        raise typer.Exit(code=1)
+
+
+@shared_app.command(name="create")
+def shared_create_cmd(
+    expire_days: int = typer.Option(7, "--expire-days", help="Invalidation window in days (7-90)"),
+    expected_size_gb: int = typer.Option(10, "--expected-size-gb", help="Expected size in GB (1-800)"),
+):
+    """Create a shared folder token."""
+    try:
+        result = api_create_shared_folder(expire_days=expire_days, expected_size_gb=expected_size_gb)
+        token = result.get("token", "")
+        expire_at = result.get("expire_at", "-")
+        print_msg(f"Shared folder token: [cyan]{token}[/cyan]")
+        print_msg(f"Expire at: {expire_at}")
+    except MagnusError as e:
+        print_error(str(e))
         raise typer.Exit(code=1)
 
 
@@ -2980,6 +3027,8 @@ server:
     max_processes: 16
     default_ttl_minutes: 60
     max_ttl_minutes: 1440
+  sharedfile:
+    invalidation_retention_period: 14
 
 execution:
   backend: local

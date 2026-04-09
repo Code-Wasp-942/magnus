@@ -367,6 +367,8 @@ const translations = {
   "jobOps.terminateDesc": { zh: "确定要终止 {name} 吗？此操作将立即停止进程且不可撤销。", en: "Are you sure you want to terminate {name}? This action will stop the process immediately and cannot be undone." },
   "jobOps.terminateBtn": { zh: "终止", en: "Terminate" },
   "jobOps.terminateFailed": { zh: "终止任务失败", en: "Failed to terminate job" },
+  "jobForm.sharedFiles": { zh: "共享目录挂载", en: "Shared Folder Mounts" },
+  "jobForm.sharedFilesPlaceholder": { zh: "一行一个：name=token", en: "One per line: name=token" },
 
   // ===== Common Actions =====
   "action.copy": { zh: "复制", en: "Copy" },
@@ -423,6 +425,15 @@ const translations = {
   "files.uploadTag": { zh: "上传", en: "Upload" },
   "files.downloadTag": { zh: "下载", en: "Download" },
   "files.folderTag": { zh: "文件夹", en: "Folder" },
+  "files.sharedTitle": { zh: "共享文件夹", en: "Shared Folder" },
+  "files.sharedDescription": { zh: "创建共享文件夹 token，可在不同用户任务中挂载。", en: "Create a shared folder token and mount it in jobs across users." },
+  "files.sharedExpireDays": { zh: "失效时间（天）", en: "Invalidation Days" },
+  "files.sharedExpectedSize": { zh: "预期大小（GB）", en: "Expected Size (GB)" },
+  "files.sharedCreate": { zh: "创建共享文件夹", en: "Create Shared Folder" },
+  "files.sharedCreateSuccess": { zh: "共享文件夹创建成功", en: "Shared folder created" },
+  "files.sharedCreateFailed": { zh: "共享文件夹创建失败", en: "Failed to create shared folder" },
+  "files.sharedTokenTitle": { zh: "共享 Token", en: "Shared Token" },
+  "files.sharedTokenHint": { zh: "请妥善保存，拿到 token 的用户都可以挂载使用。", en: "Keep it safe. Anyone with this token can mount it." },
 
   // ===== Explorer Session =====
   "explorer.goodResponse": { zh: "好的回复", en: "Good response" },

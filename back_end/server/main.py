@@ -19,6 +19,7 @@ from .database import *
 from ._scheduler import scheduler
 from ._service_manager import service_manager
 from ._file_custody_manager import file_custody_manager
+from ._shared_file_manager import shared_file_manager
 from .routers.images import recover_stuck_images
 from ._feishu_client import feishu_client
 
@@ -132,6 +133,8 @@ def _check_system_dependencies() -> None:
 
 _check_system_dependencies()
 
+shared_file_manager.set_invalidation_retention_period(magnus_config["server"]["sharedfile"]["invalidation_retention_period"])
+
 
 models.Base.metadata.create_all(
     bind = engine,
@@ -146,6 +149,14 @@ def run_migrations()-> None:
         logger.info("🔧 Adding is_shared column to explorer_sessions table...")
         with engine.connect() as conn:
             conn.execute(text("ALTER TABLE explorer_sessions ADD COLUMN is_shared BOOLEAN DEFAULT 0"))
+            conn.commit()
+        logger.info("✅ Migration completed.")
+
+    columns = [col["name"] for col in inspector.get_columns("jobs")]
+    if "shared_files" not in columns:
+        logger.info("🔧 Adding shared_files column to jobs table...")
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE jobs ADD COLUMN shared_files TEXT DEFAULT '{}'"))
             conn.commit()
         logger.info("✅ Migration completed.")
 
@@ -306,6 +317,7 @@ async def lifespan(
     scheduler_task = asyncio.create_task(run_scheduler_loop())
     service_manager_task = asyncio.create_task(service_manager.start_background_loop())
     file_custody_task = asyncio.create_task(file_custody_manager.cleanup_loop())
+    shared_file_task = asyncio.create_task(shared_file_manager.cleanup_loop())
 
     # 用户信息刷新：本地模式跳过，HPC 模式首次同步执行（quick fail），然后启动后台循环
     user_refresh_task = None
@@ -326,12 +338,14 @@ async def lifespan(
     scheduler_task.cancel()
     service_manager_task.cancel()
     file_custody_task.cancel()
+    shared_file_task.cancel()
     if user_refresh_task:
         user_refresh_task.cancel()
     try:
         await scheduler_task
         await service_manager_task
         await file_custody_task
+        await shared_file_task
         if user_refresh_task:
             await user_refresh_task
     except asyncio.CancelledError:

@@ -14,6 +14,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useLanguage } from "@/context/language-context";
+import { client } from "@/lib/api";
 import {
   downloadFileSecret,
   formatFileSize,
@@ -115,6 +116,10 @@ export default function ToolsPage() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [latestUpload, setLatestUpload] = useState<RecentSecretEntry | null>(null);
+  const [sharedExpireDays, setSharedExpireDays] = useState(7);
+  const [sharedExpectedSizeGb, setSharedExpectedSizeGb] = useState(10);
+  const [creatingShared, setCreatingShared] = useState(false);
+  const [createdSharedToken, setCreatedSharedToken] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -276,6 +281,26 @@ export default function ToolsPage() {
     }
   };
 
+  const handleCreateSharedFolder = async () => {
+    setCreatingShared(true);
+    setErrorMessage(null);
+    try {
+      const result = await client("/api/shared-files", {
+        method: "POST",
+        json: {
+          expire_days: sharedExpireDays,
+          expected_size_gb: sharedExpectedSizeGb,
+        },
+      });
+      setCreatedSharedToken(result.token || "");
+      setStatusMessage(t("files.sharedCreateSuccess"));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t("files.sharedCreateFailed"));
+    } finally {
+      setCreatingShared(false);
+    }
+  };
+
   const directoryPickerProps = {
     webkitdirectory: "",
     directory: "",
@@ -303,6 +328,36 @@ export default function ToolsPage() {
           <p>{t("files.tip")}</p>
         </div>
       </div>
+
+      <section className="bg-zinc-900/40 border border-zinc-800 rounded-xl p-6 mb-6 backdrop-blur-sm">
+        <h2 className="text-lg font-semibold text-white">{t("files.sharedTitle")}</h2>
+        <p className="text-sm text-zinc-500 mt-1">{t("files.sharedDescription")}</p>
+        <div className="grid gap-4 sm:grid-cols-2 mt-4">
+          <NumberStepper
+            label={t("files.sharedExpireDays")}
+            value={sharedExpireDays}
+            onChange={setSharedExpireDays}
+            min={7}
+            max={90}
+          />
+          <NumberStepper
+            label={t("files.sharedExpectedSize")}
+            value={sharedExpectedSizeGb}
+            onChange={setSharedExpectedSizeGb}
+            min={1}
+            max={800}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => void handleCreateSharedFolder()}
+          disabled={creatingShared}
+          className="mt-4 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium inline-flex items-center gap-2 transition-colors shadow-lg shadow-blue-900/20 active:scale-95 border border-blue-500/50 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {creatingShared ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+          {t("files.sharedCreate")}
+        </button>
+      </section>
 
       <div className="grid gap-6 xl:grid-cols-2">
         <section className="bg-zinc-900/40 border border-zinc-800 rounded-xl p-6 backdrop-blur-sm">
@@ -562,6 +617,35 @@ export default function ToolsPage() {
           </div>
         )}
       </section>
+
+      {createdSharedToken && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="w-full max-w-xl rounded-xl border border-zinc-800 bg-zinc-900 p-6">
+            <h3 className="text-lg font-semibold text-white">{t("files.sharedTokenTitle")}</h3>
+            <p className="text-sm text-zinc-400 mt-2">{t("files.sharedTokenHint")}</p>
+            <div className="mt-4 rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2">
+              <CopyableText text={createdSharedToken} variant="text" className="font-mono text-xs text-zinc-200 break-all" />
+            </div>
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => void handleCopy(createdSharedToken)}
+                className="inline-flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 hover:border-zinc-700 hover:text-white"
+              >
+                <Copy className="h-4 w-4" />
+                {t("action.copy")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setCreatedSharedToken(null)}
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500"
+              >
+                {t("common.ok")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

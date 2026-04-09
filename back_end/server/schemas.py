@@ -1,4 +1,5 @@
 # back_end/server/schemas.py
+import json
 from typing import Any, List, Dict, Optional
 from datetime import datetime
 from pydantic import BaseModel, Field, field_validator
@@ -115,6 +116,7 @@ class JobSubmission(BaseModel):
     ephemeral_storage: Optional[str] = None
     runner: Optional[str] = None
     system_entry_command: Optional[str] = None
+    shared_files: Optional[Dict[str, str]] = None
 
     @field_validator("description", "entry_command", "system_entry_command", mode="before")
     @classmethod
@@ -143,6 +145,21 @@ class JobResponse(JobSubmission):
         """QUEUED 是调度器内部状态，API 层简并为 PENDING"""
         if v == JobStatus.QUEUED or v == "Queued":
             return JobStatus.PENDING
+        return v
+
+    @field_validator("shared_files", mode="before")
+    @classmethod
+    def _normalize_shared_files(cls, v: Any)-> Any:
+        if v is None:
+            return {}
+        if isinstance(v, str):
+            if not v.strip():
+                return {}
+            try:
+                parsed = json.loads(v)
+            except Exception:
+                return {}
+            return parsed if isinstance(parsed, dict) else {}
         return v
     
     

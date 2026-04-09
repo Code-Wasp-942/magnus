@@ -633,6 +633,7 @@ class MagnusClient:
         ephemeral_storage: Optional[str],
         runner: Optional[str],
         system_entry_command: Optional[str],
+        shared_files: Optional[Dict[str, str]],
     ) -> Dict[str, Any]:
         payload: Dict[str, Any] = {
             "task_name": task_name,
@@ -653,6 +654,7 @@ class MagnusClient:
             ("ephemeral_storage", ephemeral_storage),
             ("runner", runner),
             ("system_entry_command", system_entry_command),
+            ("shared_files", shared_files),
         ]:
             if val is not None:
                 payload[key] = val
@@ -676,13 +678,14 @@ class MagnusClient:
         ephemeral_storage: Optional[str] = None,
         runner: Optional[str] = None,
         system_entry_command: Optional[str] = None,
+        shared_files: Optional[Dict[str, str]] = None,
         timeout: float = 10.0,
     ) -> str:
         payload = self._build_job_payload(
             task_name, entry_command, repo_name, branch, commit_sha,
             gpu_type, gpu_count, namespace, job_type, description,
             container_image, cpu_count, memory_demand, ephemeral_storage,
-            runner, system_entry_command,
+            runner, system_entry_command, shared_files,
         )
         try:
             resp = self.http.post("/jobs/submit", json=payload, timeout=timeout)
@@ -711,6 +714,7 @@ class MagnusClient:
         ephemeral_storage: Optional[str] = None,
         runner: Optional[str] = None,
         system_entry_command: Optional[str] = None,
+        shared_files: Optional[Dict[str, str]] = None,
         timeout: float = 10.0,
     ) -> str:
         return await asyncio.to_thread(
@@ -718,7 +722,7 @@ class MagnusClient:
             task_name, entry_command, repo_name, branch, commit_sha,
             gpu_type, gpu_count, namespace, job_type, description,
             container_image, cpu_count, memory_demand, ephemeral_storage,
-            runner, system_entry_command, timeout,
+            runner, system_entry_command, shared_files, timeout,
         )
 
     def execute_job(
@@ -739,6 +743,7 @@ class MagnusClient:
         ephemeral_storage: Optional[str] = None,
         runner: Optional[str] = None,
         system_entry_command: Optional[str] = None,
+        shared_files: Optional[Dict[str, str]] = None,
         timeout: Optional[float] = None,
         poll_interval: float = 2.0,
         execute_action: bool = True,
@@ -751,7 +756,7 @@ class MagnusClient:
             job_type=job_type, description=description,
             container_image=container_image, cpu_count=cpu_count,
             memory_demand=memory_demand, ephemeral_storage=ephemeral_storage,
-            runner=runner, system_entry_command=system_entry_command,
+            runner=runner, system_entry_command=system_entry_command, shared_files=shared_files,
         )
         return self._poll_job_completion(job_id, timeout, poll_interval, execute_action)
 
@@ -773,6 +778,7 @@ class MagnusClient:
         ephemeral_storage: Optional[str] = None,
         runner: Optional[str] = None,
         system_entry_command: Optional[str] = None,
+        shared_files: Optional[Dict[str, str]] = None,
         timeout: Optional[float] = None,
         poll_interval: float = 2.0,
         execute_action: bool = True,
@@ -785,7 +791,7 @@ class MagnusClient:
             job_type=job_type, description=description,
             container_image=container_image, cpu_count=cpu_count,
             memory_demand=memory_demand, ephemeral_storage=ephemeral_storage,
-            runner=runner, system_entry_command=system_entry_command,
+            runner=runner, system_entry_command=system_entry_command, shared_files=shared_files,
         )
         return await self._poll_job_completion_async(job_id, timeout, poll_interval, execute_action)
 
@@ -1386,6 +1392,38 @@ class MagnusClient:
         return await asyncio.to_thread(
             self._upload_file, path,
             expire_minutes, max_downloads, timeout,
+        )
+
+    def create_shared_folder(
+        self,
+        expire_days: int,
+        expected_size_gb: int,
+        timeout: float = 10.0,
+    ) -> Dict[str, Any]:
+        payload = {
+            "expire_days": expire_days,
+            "expected_size_gb": expected_size_gb,
+        }
+        try:
+            resp = self.http.post("/shared-files", json=payload, timeout=timeout)
+            self._handle_error(resp)
+            return resp.json()
+        except httpx.TimeoutException:
+            raise MagnusError("Request timed out while creating shared folder.")
+        except httpx.TransportError as e:
+            raise self._network_error("creating shared folder", e)
+
+    async def create_shared_folder_async(
+        self,
+        expire_days: int,
+        expected_size_gb: int,
+        timeout: float = 10.0,
+    ) -> Dict[str, Any]:
+        return await asyncio.to_thread(
+            self.create_shared_folder,
+            expire_days,
+            expected_size_gb,
+            timeout,
         )
 
     def call_service(
