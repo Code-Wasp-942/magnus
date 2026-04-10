@@ -5,7 +5,8 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft, Terminal, Clock, GitBranch, Cpu, Box, AlignLeft, RefreshCw, Activity,
-  ArrowDownToLine, ArrowUpToLine, ChevronUp, ChevronDown, Copy, Check, SquareX
+  ArrowDownToLine, ArrowUpToLine, ChevronUp, ChevronDown, Copy, Check, SquareX,
+  BarChart3, Package,
 } from "lucide-react";
 import { AnsiUp } from "ansi_up";
 import { client } from "@/lib/api";
@@ -24,6 +25,7 @@ import { NotFound } from "@/components/ui/not-found";
 import { useAuth } from "@/context/auth-context";
 import { useLanguage } from "@/context/language-context";
 import { useBackNavigation } from "@/hooks/use-back-navigation";
+import { MetricsChart } from "@/components/jobs/metrics-chart";
 
 const ansiUp = new AnsiUp();
 
@@ -53,7 +55,7 @@ export default function JobDetailsPage() {
 
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"console" | "description" | "metrics">("console");
+  const [activeTab, setActiveTab] = useState<"console" | "description" | "metrics" | "artifacts">("console");
 
   const [logs, setLogs] = useState("");
   const [logPage, setLogPage] = useState(-1);
@@ -160,14 +162,14 @@ export default function JobDetailsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId, isSlurmTask, job?.status, fetchLogs]);
 
-  // Follow mode polling (5x slower than POLL_INTERVAL)
+  // Follow mode polling
   useEffect(() => {
     if (!followMode) return;
     if (job && !['Pending', 'Preparing', 'Running'].includes(job.status)) {
       setFollowMode(false);
       return;
     }
-    const interval = setInterval(() => fetchLogs(-1), POLL_INTERVAL * 5);
+    const interval = setInterval(() => fetchLogs(-1), POLL_INTERVAL);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [followMode, job?.status, fetchLogs]);
@@ -202,7 +204,6 @@ export default function JobDetailsPage() {
   };
 
   const effectivePage = logPage < 0 ? Math.max(0, logTotalPages - 1) : logPage;
-
   const goToFirstPage = () => {
     setFollowMode(false);
     setLogPage(0);
@@ -582,8 +583,17 @@ export default function JobDetailsPage() {
                 className={`flex items-center gap-2 text-sm font-semibold transition-colors cursor-pointer
                   ${activeTab === "metrics" ? "text-zinc-200" : "text-zinc-500 hover:text-zinc-300"}`}
               >
-                <Activity className={`w-4 h-4 ${activeTab === "metrics" ? "text-zinc-400" : "text-zinc-600"}`} />
+                <BarChart3 className={`w-4 h-4 ${activeTab === "metrics" ? "text-zinc-400" : "text-zinc-600"}`} />
                 <span>{t("jobDetail.metrics")}</span>
+              </div>
+
+              <div
+                onClick={() => setActiveTab("artifacts")}
+                className={`flex items-center gap-2 text-sm font-semibold transition-colors cursor-pointer
+                  ${activeTab === "artifacts" ? "text-zinc-200" : "text-zinc-500 hover:text-zinc-300"}`}
+              >
+                <Package className={`w-4 h-4 ${activeTab === "artifacts" ? "text-zinc-400" : "text-zinc-600"}`} />
+                <span>{t("jobDetail.artifacts")}</span>
               </div>
 
             </div>
@@ -677,20 +687,45 @@ export default function JobDetailsPage() {
 
             {activeTab === "metrics" && (
               <div className="absolute inset-0 overflow-auto p-5 custom-scrollbar">
-                <div className="h-full flex flex-col items-center justify-center text-zinc-500 gap-4 min-h-[400px]">
-                  <div className="relative">
-                    <Activity className="w-12 h-12 opacity-20" />
-                    <div className="absolute -bottom-1 -right-1 bg-amber-500/20 text-amber-500 p-1 rounded-full">
-                      <RefreshCw className="w-4 h-4 animate-spin-slow" />
-                    </div>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-zinc-200 font-bold text-lg mb-1">{t("jobDetail.comingSoon")}</p>
-                    <p className="text-zinc-500 text-sm">{t("jobDetail.underConstruction")}</p>
-                  </div>
+                <MetricsChart jobId={jobId} jobStatus={job.status} />
+              </div>
+            )}
+
+            {activeTab === "artifacts" && (
+              <div className="absolute inset-0 overflow-auto p-5 custom-scrollbar space-y-6">
+                {/* Result */}
+                <div>
+                  <h4 className="text-sm font-semibold text-zinc-400 mb-2">{t("jobDetail.result")}</h4>
+                  {job.result ? (
+                    <pre className="text-sm text-zinc-300 bg-zinc-900/50 border border-zinc-800 rounded-lg p-4 whitespace-pre-wrap break-all font-mono">
+                      {job.result}
+                    </pre>
+                  ) : (
+                    <p className="text-sm text-zinc-600 italic">
+                      {['Pending', 'Preparing', 'Running'].includes(job.status)
+                        ? t("jobDetail.waitingOutput")
+                        : t("jobDetail.noResult")}
+                    </p>
+                  )}
+                </div>
+                {/* Action */}
+                <div>
+                  <h4 className="text-sm font-semibold text-zinc-400 mb-2">{t("jobDetail.action")}</h4>
+                  {job.action ? (
+                    <pre className="text-sm text-zinc-300 bg-zinc-900/50 border border-zinc-800 rounded-lg p-4 whitespace-pre-wrap break-all font-mono">
+                      {job.action}
+                    </pre>
+                  ) : (
+                    <p className="text-sm text-zinc-600 italic">
+                      {['Pending', 'Preparing', 'Running'].includes(job.status)
+                        ? t("jobDetail.waitingOutput")
+                        : t("jobDetail.noAction")}
+                    </p>
+                  )}
                 </div>
               </div>
             )}
+
           </div>
 
         </div>
